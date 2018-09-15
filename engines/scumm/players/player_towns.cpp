@@ -555,6 +555,10 @@ void Player_Towns_v1::playEuphonyTrack(int sound, const uint8 *data) {
 }
 
 void Player_Towns_v1::playCdaTrack(int sound, const uint8 *data, bool skipTrackVelo) {
+	warning("IGNORE SOUND! sound: %d", sound);
+	//NSLog(@"IGNORE SOUND!");
+	return;
+	
 	const uint8 *ptr = data;
 
 	if (!sound)
