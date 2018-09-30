@@ -385,13 +385,20 @@ uint getSizeNextPOT(uint size) {
 	swipeDown.numberOfTouchesRequired = 2;
 	swipeDown.delaysTouchesBegan = NO;
 	swipeDown.delaysTouchesEnded = NO;
-
+	 
 	UITapGestureRecognizer *doubleTapTwoFingers = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(twoFingersDoubleTap:)];
 	doubleTapTwoFingers.numberOfTapsRequired = 2;
 	doubleTapTwoFingers.numberOfTouchesRequired = 2;
 	doubleTapTwoFingers.delaysTouchesBegan = NO;
 	doubleTapTwoFingers.delaysTouchesEnded = NO;
-
+	 */
+	UITapGestureRecognizer *simpleTap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(simpleTap:)];
+	simpleTap.numberOfTapsRequired = 2;
+	simpleTap.delaysTouchesBegan = NO;
+	simpleTap.delaysTouchesEnded = NO;
+	
+	[self addGestureRecognizer:simpleTap];
+	/*
 	[self addGestureRecognizer:swipeUpFourFingers];
 	[self addGestureRecognizer:swipeDownFourFingers];
 	[self addGestureRecognizer:swipeRight];
@@ -399,7 +406,10 @@ uint getSizeNextPOT(uint size) {
 	[self addGestureRecognizer:swipeUp];
 	[self addGestureRecognizer:swipeDown];
 	[self addGestureRecognizer:doubleTapTwoFingers];
-
+	 */
+	
+	[simpleTap release];
+	/*
 	[swipeUpFourFingers release];
 	[swipeDownFourFingers release];
 	[swipeRight release];
@@ -437,6 +447,7 @@ uint getSizeNextPOT(uint size) {
 
 	_scaledShakeOffsetY = 0;
 
+	// TODO: We probably do not need touch properties etc for tvOS.
 	_firstTouch = NULL;
 	_secondTouch = NULL;
 
@@ -985,6 +996,12 @@ uint getSizeNextPOT(uint size) {
 	_secondTouch = nil;
 }
 
+- (void)simpleTap:(UITapGestureRecognizer *)recognizer {
+	NSLog(@"simpleTap");
+	[self addEvent:InternalEvent(kInputTap, kUIViewTapSingle, 1)]; // TODO: Hmm no idea about the 3rd parameter but maybe it's the amount of taps. Eh.
+}
+
+/*
 - (void)fourFingersSwipeUp:(UISwipeGestureRecognizer *)recognizer {
 	[_keyboardView showKeyboard];
 }
@@ -992,7 +1009,7 @@ uint getSizeNextPOT(uint size) {
 - (void)fourFingersSwipeDown:(UISwipeGestureRecognizer *)recognizer {
 	[_keyboardView hideKeyboard];
 }
-	
+
 - (void)twoFingersSwipeRight:(UISwipeGestureRecognizer *)recognizer {
 	[self addEvent:InternalEvent(kInputSwipe, kUIViewSwipeRight, 2)];
 }
@@ -1012,6 +1029,7 @@ uint getSizeNextPOT(uint size) {
 - (void)twoFingersDoubleTap:(UITapGestureRecognizer *)recognizer {
 	[self addEvent:InternalEvent(kInputTap, kUIViewTapDouble, 2)];
 }
+*/
 
 - (void)handleKeyPress:(unichar)c {
 	if (c == '`') {

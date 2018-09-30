@@ -42,6 +42,8 @@
 - (void)applicationDidFinishLaunching:(UIApplication *)application {
 	CGRect rect = [[UIScreen mainScreen] bounds];
 
+	NSLog(@"tvOS - applicationDidFinishLaunching, rect: %@", NSStringFromCGRect(rect));
+
 #ifdef IPHONE_SANDBOXED
 	// Create the directory for savegames
 	NSFileManager *fm = [NSFileManager defaultManager];
