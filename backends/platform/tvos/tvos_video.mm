@@ -388,6 +388,7 @@ uint getSizeNextPOT(uint size) {
 	 
 	 */
 
+	/*
 	UITapGestureRecognizer *doubleTapTwoFingers = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(twoFingersDoubleTap:)];
 	doubleTapTwoFingers.numberOfTapsRequired = 2;
 	doubleTapTwoFingers.delaysTouchesBegan = NO;
@@ -400,7 +401,6 @@ uint getSizeNextPOT(uint size) {
 	
 	[self addGestureRecognizer:doubleTapTwoFingers];
 	[self addGestureRecognizer:simpleTap];
-	/*
 	[self addGestureRecognizer:swipeUpFourFingers];
 	[self addGestureRecognizer:swipeDownFourFingers];
 	[self addGestureRecognizer:swipeRight];
@@ -409,9 +409,9 @@ uint getSizeNextPOT(uint size) {
 	[self addGestureRecognizer:swipeDown];
 	 */
 	
+	/*
 	[doubleTapTwoFingers release];
 	[simpleTap release];
-	/*
 	[swipeUpFourFingers release];
 	[swipeDownFourFingers release];
 	[swipeRight release];
@@ -998,16 +998,15 @@ uint getSizeNextPOT(uint size) {
 }
 
 #pragma mark Touches
-- (void)twoFingersDoubleTap:(UITapGestureRecognizer *)recognizer {
-	NSLog(@"twoFingersDoubleTap");
-	[self addEvent:InternalEvent(kInputTap, kUIViewTapDouble, 2)];
-}
-
-- (void)simpleTap:(UITapGestureRecognizer *)recognizer {
-	NSLog(@"simpleTap");
-	[self addEvent:InternalEvent(kInputTap, kUIViewTapSingle, 1)]; // TODO: Hmm no idea about the 3rd parameter but maybe it's the amount of taps. Eh.
-}
-
+//- (void)twoFingersDoubleTap:(UITapGestureRecognizer *)recognizer {
+//	NSLog(@"twoFingersDoubleTap");
+//	[self addEvent:InternalEvent(kInputTap, kUIViewTapDouble, 2)];
+//}
+//
+//- (void)simpleTap:(UITapGestureRecognizer *)recognizer {
+//	NSLog(@"simpleTap");
+//	[self addEvent:InternalEvent(kInputTap, kUIViewTapSingle, 1)]; // TODO: Hmm no idea about the 3rd parameter but maybe it's the amount of taps. Eh.
+//}
 
 /*
 - (void)fourFingersSwipeUp:(UISwipeGestureRecognizer *)recognizer {
