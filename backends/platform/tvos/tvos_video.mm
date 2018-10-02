@@ -23,11 +23,11 @@
 // Disable symbol overrides so that we can use system headers.
 #define FORBIDDEN_SYMBOL_ALLOW_ALL
 
-#include "backends/platform/ios7/ios7_video.h"
+#include "backends/platform/tvos/tvos_video.h"
 
 #include "graphics/colormasks.h"
 #include "common/system.h"
-#include "backends/platform/ios7/ios7_app_delegate.h"
+#include "backends/platform/tvos/tvos_app_delegate.h"
 
 static int g_needsScreenUpdate = 0;
 
@@ -69,7 +69,7 @@ void iOS7_updateScreen() {
 	if (!g_needsScreenUpdate) {
 		g_needsScreenUpdate = 1;
 		execute_on_main_thread(^{
-			[[iOS7AppDelegate iPhoneView] updateSurface];
+			[[AppleTVAppDelegate appleTVView] updateSurface];
 		});
 	}
 }
@@ -77,7 +77,7 @@ void iOS7_updateScreen() {
 bool iOS7_fetchEvent(InternalEvent *event) {
 	__block bool fetched;
 	execute_on_main_thread(^{
-		fetched = [[iOS7AppDelegate iPhoneView] fetchEvent:event];
+		fetched = [[AppleTVAppDelegate appleTVView] fetchEvent:event];
 	});
 	return fetched;
 }
@@ -95,7 +95,7 @@ uint getSizeNextPOT(uint size) {
 	return size;
 }
 
-@implementation iPhoneView
+@implementation AppleTVView
 
 + (Class)layerClass {
 	return [CAEAGLLayer class];
@@ -998,6 +998,13 @@ uint getSizeNextPOT(uint size) {
 }
 
 #pragma mark Touches
+- (void)pressPrimary {
+	[self addEvent:InternalEvent(kInputTap, kUIViewTapSingle, 1)]; // TODO: Hmm no idea about the 3rd parameter but maybe it's the amount of taps. Eh.
+}
+
+- (void)pressSecondary {
+	[self addEvent:InternalEvent(kInputTap, kUIViewTapDouble, 2)];
+}
 //- (void)twoFingersDoubleTap:(UITapGestureRecognizer *)recognizer {
 //	NSLog(@"twoFingersDoubleTap");
 //	[self addEvent:InternalEvent(kInputTap, kUIViewTapDouble, 2)];

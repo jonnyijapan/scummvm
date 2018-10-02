@@ -27,7 +27,7 @@
 #include "backends/platform/ios7/ios7_video.h"
 
 #include "graphics/conversion.h"
-#include "backends/platform/ios7/ios7_app_delegate.h"
+#include "backends/platform/tvos/tvos_app_delegate.h"
 
 /*
 @interface iOS7AlertHandler : NSObject<UIAlertViewDelegate>
@@ -83,7 +83,7 @@ void OSystem_iOS7::engineDone() {
 }
 
 void OSystem_iOS7::initVideoContext() {
-	_videoContext = [[iOS7AppDelegate iPhoneView] getVideoContext];
+	_videoContext = [[AppleTVAppDelegate appleTVView] getVideoContext];
 }
 
 const OSystem::GraphicsMode *OSystem_iOS7::getSupportedGraphicsModes() const {
@@ -154,7 +154,7 @@ void OSystem_iOS7::initSize(uint width, uint height, const Graphics::PixelFormat
 	// when a game requests hi-color mode, we actually set the framebuffer
 	// to the texture buffer to avoid an additional copy step.
 	execute_on_main_thread(^ {
-		[[iOS7AppDelegate iPhoneView] createScreenTexture];
+		[[AppleTVAppDelegate appleTVView] createScreenTexture];
 	});
 
 	// In case the client code tries to set up a non supported mode, we will
@@ -193,7 +193,7 @@ OSystem::TransactionError OSystem_iOS7::endGFXTransaction() {
 	_screenChangeCount++;
 	updateOutputSurface();
 	execute_on_main_thread(^ {
-		[[iOS7AppDelegate iPhoneView] setGraphicsMode];
+		[[AppleTVAppDelegate appleTVView] setGraphicsMode];
 	});
 
 	return _gfxTransactionError;
@@ -201,7 +201,7 @@ OSystem::TransactionError OSystem_iOS7::endGFXTransaction() {
 
 void OSystem_iOS7::updateOutputSurface() {
 	execute_on_main_thread(^ {
-		[[iOS7AppDelegate iPhoneView] initSurface];
+		[[AppleTVAppDelegate appleTVView] initSurface];
 	});
 }
 
@@ -363,7 +363,7 @@ void OSystem_iOS7::setShakePos(int shakeOffset) {
 	//printf("setShakePos(%i)\n", shakeOffset);
 	_videoContext->shakeOffsetY = shakeOffset;
 	execute_on_main_thread(^ {
-		[[iOS7AppDelegate iPhoneView] setViewTransformation];
+		[[AppleTVAppDelegate appleTVView] setViewTransformation];
 	});
 	// HACK: We use this to force a redraw.
 	_mouseDirty = true;
@@ -375,8 +375,8 @@ void OSystem_iOS7::showOverlay() {
 	dirtyFullOverlayScreen();
 	updateScreen();
 	execute_on_main_thread(^ {
-		[[iOS7AppDelegate iPhoneView] updateMouseCursorScaling];
-		[[iOS7AppDelegate iPhoneView] clearColorBuffer];
+		[[AppleTVAppDelegate appleTVView] updateMouseCursorScaling];
+		[[AppleTVAppDelegate appleTVView] clearColorBuffer];
 	});
 }
 
@@ -386,8 +386,8 @@ void OSystem_iOS7::hideOverlay() {
 	_dirtyOverlayRects.clear();
 	dirtyFullScreen();
 	execute_on_main_thread(^ {
-		[[iOS7AppDelegate iPhoneView] updateMouseCursorScaling];
-		[[iOS7AppDelegate iPhoneView] clearColorBuffer];
+		[[AppleTVAppDelegate appleTVView] updateMouseCursorScaling];
+		[[AppleTVAppDelegate appleTVView] clearColorBuffer];
 	});
 }
 
@@ -470,7 +470,7 @@ void OSystem_iOS7::warpMouse(int x, int y) {
 	_videoContext->mouseX = x;
 	_videoContext->mouseY = y;
 	execute_on_main_thread(^ {
-		[[iOS7AppDelegate iPhoneView] notifyMouseMove];
+		[[AppleTVAppDelegate appleTVView] notifyMouseMove];
 	});
 	_mouseDirty = true;
 }
@@ -585,6 +585,6 @@ void OSystem_iOS7::updateMouseTexture() {
 	}
 
 	execute_on_main_thread(^ {
-		[[iOS7AppDelegate iPhoneView] updateMouseCursor];
+		[[AppleTVAppDelegate appleTVView] updateMouseCursor];
 	});
 }

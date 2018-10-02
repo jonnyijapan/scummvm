@@ -21,16 +21,20 @@
  */
 
 #define FORBIDDEN_SYMBOL_ALLOW_ALL
-#include "backends/platform/ios7/ios7_app_delegate.h"
-#include "backends/platform/ios7/ios7_video.h"
-
+#include "backends/platform/tvos/tvos_app_delegate.h"
+#include "backends/platform/tvos/tvos_video.h"
 #include "ScummVM_tvOS-Swift.h"
 
 
-@implementation iOS7AppDelegate {
+@interface AppleTVAppDelegate () <Protocol_tvosscummvmviewcontroller> {
+	
+}
+@end
+
+@implementation AppleTVAppDelegate {
 	UIWindow *_window;
 	tvOSScummVMViewController *_controller;
-	iPhoneView *_view;
+	AppleTVView *_view;
 }
 
 - (id)init {
@@ -60,10 +64,9 @@
 	_window = [[UIWindow alloc] initWithFrame:rect];
 	[_window retain];
 
-	_controller = [[tvOSScummVMViewController alloc] init];
+	_controller = [[tvOSScummVMViewController alloc] initWithDelegate:self];
 
-	_view = [[iPhoneView alloc] initWithFrame:rect];
-	//_view.multipleTouchEnabled = YES;
+	_view = [[AppleTVView alloc] initWithFrame:rect];
 	_controller.view = _view;
 
 	[_window setRootViewController:_controller];
@@ -116,14 +119,25 @@
 	*/
 }
 
-+ (iOS7AppDelegate *)iOS7AppDelegate {
++ (AppleTVAppDelegate *)AppleTVAppDelegate {
 	UIApplication *app = [UIApplication sharedApplication];
-	return (iOS7AppDelegate *) app.delegate;
+	return (AppleTVAppDelegate *) app.delegate;
 }
 
-+ (iPhoneView *)iPhoneView {
-	iOS7AppDelegate *appDelegate = [self iOS7AppDelegate];
++ (AppleTVView *)appleTVView {
+	AppleTVAppDelegate *appDelegate = [self AppleTVAppDelegate];
 	return appDelegate->_view;
+}
+
+- (void)pressWithButton:(enum Button)button {
+	switch (button) {
+		case ButtonPrimary:
+			[_view pressPrimary];
+			break;
+		case ButtonSecondary:
+			[_view pressSecondary];
+			break;
+	}
 }
 
 @end
