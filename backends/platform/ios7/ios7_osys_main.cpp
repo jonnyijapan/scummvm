@@ -316,7 +316,7 @@ OSystem_iOS7 *OSystem_iOS7::sharedInstance() {
 
 Common::String OSystem_iOS7::getDefaultConfigFileName() {
 #ifdef IPHONE_SANDBOXED
-	Common::String path = "/Preferences";
+	Common::String path = "/ScummPreferences";
 	return path;
 #else
 	return SCUMMVM_PREFS_PATH;

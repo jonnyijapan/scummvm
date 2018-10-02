@@ -386,17 +386,19 @@ uint getSizeNextPOT(uint size) {
 	swipeDown.delaysTouchesBegan = NO;
 	swipeDown.delaysTouchesEnded = NO;
 	 
+	 */
+
 	UITapGestureRecognizer *doubleTapTwoFingers = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(twoFingersDoubleTap:)];
 	doubleTapTwoFingers.numberOfTapsRequired = 2;
-	doubleTapTwoFingers.numberOfTouchesRequired = 2;
 	doubleTapTwoFingers.delaysTouchesBegan = NO;
 	doubleTapTwoFingers.delaysTouchesEnded = NO;
-	 */
+
 	UITapGestureRecognizer *simpleTap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(simpleTap:)];
 	simpleTap.numberOfTapsRequired = 2;
 	simpleTap.delaysTouchesBegan = NO;
 	simpleTap.delaysTouchesEnded = NO;
 	
+	[self addGestureRecognizer:doubleTapTwoFingers];
 	[self addGestureRecognizer:simpleTap];
 	/*
 	[self addGestureRecognizer:swipeUpFourFingers];
@@ -405,9 +407,9 @@ uint getSizeNextPOT(uint size) {
 	[self addGestureRecognizer:swipeLeft];
 	[self addGestureRecognizer:swipeUp];
 	[self addGestureRecognizer:swipeDown];
-	[self addGestureRecognizer:doubleTapTwoFingers];
 	 */
 	
+	[doubleTapTwoFingers release];
 	[simpleTap release];
 	/*
 	[swipeUpFourFingers release];
@@ -416,7 +418,6 @@ uint getSizeNextPOT(uint size) {
 	[swipeLeft release];
 	[swipeUp release];
 	[swipeDown release];
-	[doubleTapTwoFingers release];
 	*/
 }
 
@@ -996,10 +997,17 @@ uint getSizeNextPOT(uint size) {
 	_secondTouch = nil;
 }
 
+#pragma mark Touches
+- (void)twoFingersDoubleTap:(UITapGestureRecognizer *)recognizer {
+	NSLog(@"twoFingersDoubleTap");
+	[self addEvent:InternalEvent(kInputTap, kUIViewTapDouble, 2)];
+}
+
 - (void)simpleTap:(UITapGestureRecognizer *)recognizer {
 	NSLog(@"simpleTap");
 	[self addEvent:InternalEvent(kInputTap, kUIViewTapSingle, 1)]; // TODO: Hmm no idea about the 3rd parameter but maybe it's the amount of taps. Eh.
 }
+
 
 /*
 - (void)fourFingersSwipeUp:(UISwipeGestureRecognizer *)recognizer {
@@ -1024,10 +1032,6 @@ uint getSizeNextPOT(uint size) {
 
 - (void)twoFingersSwipeDown:(UISwipeGestureRecognizer *)recognizer {
 	[self addEvent:InternalEvent(kInputSwipe, kUIViewSwipeDown, 2)];
-}
-
-- (void)twoFingersDoubleTap:(UITapGestureRecognizer *)recognizer {
-	[self addEvent:InternalEvent(kInputTap, kUIViewTapDouble, 2)];
 }
 */
 

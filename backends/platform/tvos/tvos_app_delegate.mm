@@ -22,12 +22,14 @@
 
 #define FORBIDDEN_SYMBOL_ALLOW_ALL
 #include "backends/platform/ios7/ios7_app_delegate.h"
-#include "backends/platform/ios7/ios7_scummvm_view_controller.h"
 #include "backends/platform/ios7/ios7_video.h"
+
+#include "ScummVM_tvOS-Swift.h"
+
 
 @implementation iOS7AppDelegate {
 	UIWindow *_window;
-	iOS7ScummVMViewController *_controller;
+	tvOSScummVMViewController *_controller;
 	iPhoneView *_view;
 }
 
@@ -49,6 +51,7 @@
 	NSFileManager *fm = [NSFileManager defaultManager];
 	NSString *documentPath = [NSString stringWithUTF8String:iOS7_getDocumentsDir()];
 	NSString *savePath = [documentPath stringByAppendingPathComponent:@"Savegames"];
+	NSLog(@"savePath: %@", savePath);
 	if (![fm fileExistsAtPath:savePath]) {
 		[fm createDirectoryAtPath:savePath withIntermediateDirectories:YES attributes:nil error:nil];
 	}
@@ -57,7 +60,7 @@
 	_window = [[UIWindow alloc] initWithFrame:rect];
 	[_window retain];
 
-	_controller = [[iOS7ScummVMViewController alloc] init];
+	_controller = [[tvOSScummVMViewController alloc] init];
 
 	_view = [[iPhoneView alloc] initWithFrame:rect];
 	//_view.multipleTouchEnabled = YES;
@@ -78,6 +81,24 @@
 	dispatch_async(dispatch_get_global_queue(0, 0), ^{
 		iOS7_main(iOS7_argc, iOS7_argv);
 	});
+	
+	
+#ifdef IPHONE_SANDBOXED
+	// Just testing...
+	NSUserDefaults* defaults = [NSUserDefaults standardUserDefaults];
+	NSString* defkey = @"testkey";
+	NSString* thevalue = [defaults objectForKey:defkey];
+	if (thevalue != nil) {
+		NSLog(@"defaults: stored value: %@", thevalue);
+	}
+	else {
+		NSDate* date = [NSDate new];
+		NSString* newvalue = date.description;
+		NSLog(@"defaults: no value! Store: %@", newvalue);
+		[defaults setObject:newvalue forKey:defkey];
+		[date release];
+	}
+#endif
 }
 
 - (void)applicationWillResignActive:(UIApplication *)application {
@@ -108,7 +129,9 @@
 @end
 
 const char *iOS7_getDocumentsDir() {
-	NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
-	NSString *documentsDirectory = [paths objectAtIndex:0];
-	return [documentsDirectory UTF8String];
+	NSString* dir = [[[NSBundle mainBundle] bundlePath] stringByAppendingPathComponent:@"rootgamescumm"];
+	return [dir UTF8String];
+//	NSArray *paths = NSSearchPathForDirectoriesInDomains(NSLibraryDirectory, NSUserDomainMask, YES);
+//	NSString *documentsDirectory = [paths objectAtIndex:0];
+//	return [documentsDirectory UTF8String];
 }
