@@ -9,6 +9,8 @@ import UIKit
 
 @objc protocol Protocol_tvosscummvmviewcontroller: class {
 	func press(button: tvOSScummVMViewController.Button)
+	func release(button: tvOSScummVMViewController.Button)
+	func cancel(button: tvOSScummVMViewController.Button)
 }
 
 class tvOSScummVMViewController: UIViewController {
@@ -26,8 +28,32 @@ class tvOSScummVMViewController: UIViewController {
 	}
 	
 	override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
-		//print("pressesBegan presses: \(presses), event: \(String(describing: event))")
-		
+		guard let d = self.delegate, let button = tvOSScummVMViewController.fetchButton(from: event) else {
+			super.pressesBegan(presses, with: event)
+			return
+		}
+		d.press(button: button)
+	}
+
+	override func pressesEnded(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+		guard let d = self.delegate, let button = tvOSScummVMViewController.fetchButton(from: event) else {
+			super.pressesEnded(presses, with: event)
+			return
+		}
+		d.release(button: button)
+	}
+	
+	override func pressesCancelled(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+		guard let d = self.delegate, let button = tvOSScummVMViewController.fetchButton(from: event) else {
+			super.pressesEnded(presses, with: event)
+			return
+		}
+		d.cancel(button: button)
+	}
+}
+
+private extension tvOSScummVMViewController {
+	static func fetchButton(from event: UIPressesEvent?) -> Button? {
 		let button: Button?
 		
 		if let event = event, let press = event.allPresses.first {
@@ -59,12 +85,7 @@ class tvOSScummVMViewController: UIViewController {
 		else {
 			button = nil
 		}
-	
-		if let button = button {
-			self.delegate?.press(button: button)
-		}
-		else {
-			super.pressesBegan(presses, with: event)
-		}
+		
+		return button
 	}
 }

@@ -95,7 +95,10 @@ uint getSizeNextPOT(uint size) {
 	return size;
 }
 
-@implementation AppleTVView
+@implementation AppleTVView {
+	int _currentX;
+	int _currentY;
+}
 
 + (Class)layerClass {
 	return [CAEAGLLayer class];
@@ -956,6 +959,8 @@ uint getSizeNextPOT(uint size) {
 			if (![self getMouseCoords:point eventX:&x eventY:&y])
 				return;
 
+			_currentX = x;
+			_currentY = y;
 			[self addEvent:InternalEvent(kInputMouseDragged, x, y)];
 		} else if (touch == _secondTouch) {
 			CGPoint point = [touch locationInView:self];
@@ -993,19 +998,53 @@ uint getSizeNextPOT(uint size) {
 }
 
 - (void)touchesCancelled:(NSSet *)touches withEvent:(UIEvent *)event {
+	[self resetTouches];
+}
+
+- (void)resetTouches {
 	_firstTouch = nil;
 	_secondTouch = nil;
 }
 
 #pragma mark Touches
-- (void)pressPrimary {
-	NSLog(@"pressPrimary");
-	[self addEvent:InternalEvent(kInputTap, kUIViewTapSingle, 1)]; // TODO: Hmm no idea about the 3rd parameter but maybe it's the amount of taps. Eh.
+- (void)pressLog:(NSString*)text {
+	NSLog(@"pressLog - main thread: %@ - %@", [NSThread isMainThread] ? @"yes" : @"no", text);
 }
-
+- (void)pressPrimary {
+	[self pressLog:@"pressPrimary"];
+	execute_on_main_thread(^{
+		[self addEvent:InternalEvent(kInputMouseDown, _currentX, _currentY)];
+	});
+}
 - (void)pressSecondary {
-	NSLog(@"pressSecondary");
-	[self addEvent:InternalEvent(kInputTap, kUIViewTapDouble, 2)];
+	[self pressLog:@"pressSecondary"];
+	execute_on_main_thread(^{
+		[self addEvent:InternalEvent(kInputMouseSecondDown, _currentX, _currentY)];
+	});
+}
+- (void)releasePrimary {
+	[self pressLog:@"releasePrimary"];
+	execute_on_main_thread(^{
+		[self addEvent:InternalEvent(kInputMouseUp, _currentX, _currentY)];
+	});
+}
+- (void)releaseSecondary {
+	[self pressLog:@"releaseSecondary"];
+	execute_on_main_thread(^{
+		[self addEvent:InternalEvent(kInputMouseSecondUp, _currentX, _currentY)];
+	});
+}
+- (void)cancelPrimary {
+	[self pressLog:@"cancelPrimary"];
+	execute_on_main_thread(^{
+		[self resetTouches];
+	});
+}
+- (void)cancelSecondary {
+	[self pressLog:@"cancelSecondary"];
+	execute_on_main_thread(^{
+		[self resetTouches];
+	});
 }
 //- (void)twoFingersDoubleTap:(UITapGestureRecognizer *)recognizer {
 //	NSLog(@"twoFingersDoubleTap");

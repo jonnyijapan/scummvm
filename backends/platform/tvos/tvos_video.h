@@ -128,6 +128,10 @@ typedef struct {
 
 - (void)pressPrimary;
 - (void)pressSecondary;
+- (void)releasePrimary;
+- (void)releaseSecondary;
+- (void)cancelPrimary;
+- (void)cancelSecondary;
 
 @end
 

@@ -140,6 +140,28 @@
 	}
 }
 
+- (void)releaseWithButton:(enum Button)button {
+	switch (button) {
+		case ButtonPrimary:
+			[_view releasePrimary];
+			break;
+		case ButtonSecondary:
+			[_view releaseSecondary];
+			break;
+	}
+}
+
+- (void)cancelWithButton:(enum Button)button {
+	switch (button) {
+		case ButtonPrimary:
+			[_view cancelPrimary];
+			break;
+		case ButtonSecondary:
+			[_view cancelSecondary];
+			break;
+	}
+}
+
 @end
 
 const char *iOS7_getDocumentsDir() {
