@@ -999,10 +999,12 @@ uint getSizeNextPOT(uint size) {
 
 #pragma mark Touches
 - (void)pressPrimary {
+	NSLog(@"pressPrimary");
 	[self addEvent:InternalEvent(kInputTap, kUIViewTapSingle, 1)]; // TODO: Hmm no idea about the 3rd parameter but maybe it's the amount of taps. Eh.
 }
 
 - (void)pressSecondary {
+	NSLog(@"pressSecondary");
 	[self addEvent:InternalEvent(kInputTap, kUIViewTapDouble, 2)];
 }
 //- (void)twoFingersDoubleTap:(UITapGestureRecognizer *)recognizer {
