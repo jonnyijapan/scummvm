@@ -29,6 +29,8 @@
 #include "common/system.h"
 #include "backends/platform/tvos/tvos_app_delegate.h"
 
+#import "tvos_errors.h"
+
 static int g_needsScreenUpdate = 0;
 
 #if 0
@@ -1010,42 +1012,122 @@ uint getSizeNextPOT(uint size) {
 - (void)pressLog:(NSString*)text {
 	NSLog(@"pressLog - main thread: %@ - %@", [NSThread isMainThread] ? @"yes" : @"no", text);
 }
-- (void)pressPrimary {
-	[self pressLog:@"pressPrimary"];
-	execute_on_main_thread(^{
-		[self addEvent:InternalEvent(kInputMouseDown, _currentX, _currentY)];
-	});
+- (void)handleAction:(const AppleTVRemoteAction)ACTION button:(const AppleTVRemoteButton)BUTTON {
+	NSError* error;
+	const InputEvent EVENT = [AppleTVView inputeventFromAction:ACTION button:BUTTON error:&error];
+	if (error != nil) {
+		// Error (unhandled etc)
+	}
+	else {
+		execute_on_main_thread(^{
+			[self addEvent:InternalEvent(EVENT, _currentX, _currentY)];
+		});
+	}
 }
-- (void)pressSecondary {
-	[self pressLog:@"pressSecondary"];
-	execute_on_main_thread(^{
-		[self addEvent:InternalEvent(kInputMouseSecondDown, _currentX, _currentY)];
-	});
+- (void)press:(AppleTVRemoteButton)button {
+	[self pressLog:[NSString stringWithFormat:@"press %ld", (long)button]];
+	[self handleAction:buttonDown button:button];
 }
-- (void)releasePrimary {
-	[self pressLog:@"releasePrimary"];
-	execute_on_main_thread(^{
-		[self addEvent:InternalEvent(kInputMouseUp, _currentX, _currentY)];
-	});
+- (void)release:(AppleTVRemoteButton)button {
+	[self pressLog:[NSString stringWithFormat:@"release %ld", (long)button]];
+	[self handleAction:buttonUp button:button];
 }
-- (void)releaseSecondary {
-	[self pressLog:@"releaseSecondary"];
-	execute_on_main_thread(^{
-		[self addEvent:InternalEvent(kInputMouseSecondUp, _currentX, _currentY)];
-	});
-}
-- (void)cancelPrimary {
-	[self pressLog:@"cancelPrimary"];
+- (void)cancel:(AppleTVRemoteButton)button {
+	[self pressLog:[NSString stringWithFormat:@"cancel %ld", (long)button]];
+	
 	execute_on_main_thread(^{
 		[self resetTouches];
 	});
 }
-- (void)cancelSecondary {
-	[self pressLog:@"cancelSecondary"];
-	execute_on_main_thread(^{
-		[self resetTouches];
-	});
++ (InputEvent)inputeventFromAction:(const AppleTVRemoteAction)ACTION button:(const AppleTVRemoteButton)BUTTON error:(NSError *__autoreleasing *)error {
+	InputEvent event = kInputMouseDown;
+	*error = nil;
+	
+	switch (BUTTON) {
+		case primary:
+			switch (ACTION) {
+				case buttonDown:
+					event = kInputMouseDown;
+					break;
+				case buttonUp:
+					event = kInputMouseUp;
+					break;
+				case buttonCancel:
+					event = kInputMouseDown; // FIXME: Should not be possible.
+					break;
+			}
+			break;
+		case secondary:
+			switch (ACTION) {
+				case buttonDown:
+					event = kInputMouseSecondDown;
+					break;
+				case buttonUp:
+					event = kInputMouseSecondUp;
+					break;
+				case buttonCancel:
+					event = kInputMouseSecondDown; // FIXME: Should not be possible.
+					break;
+			}
+			break;
+		case menu:
+			// TODO: fix this
+			switch (ACTION) {
+				case buttonDown:
+					event = kInputMouseSecondDown;
+					break;
+				case buttonUp:
+					*error = [NSError errorWithDomain:TvosErrorDomain code:0 userInfo:nil];
+					break;
+				case buttonCancel:
+					*error = [NSError errorWithDomain:TvosErrorDomain code:0 userInfo:nil];
+					break;
+			}
+			break;
+		default:
+			*error = [NSError errorWithDomain:TvosErrorDomain code:0 userInfo:nil];
+			break;
+	}
+	
+	return event;
 }
+//- (void)pressPrimary {
+//	[self pressLog:@"pressPrimary"];
+//	execute_on_main_thread(^{
+//		[self addEvent:InternalEvent(kInputMouseDown, _currentX, _currentY)];
+//	});
+//}
+//- (void)pressSecondary {
+//	[self pressLog:@"pressSecondary"];
+//	execute_on_main_thread(^{
+//		[self addEvent:InternalEvent(kInputMouseSecondDown, _currentX, _currentY)];
+//	});
+//}
+//- (void)releasePrimary {
+//	[self pressLog:@"releasePrimary"];
+//	execute_on_main_thread(^{
+//		[self addEvent:InternalEvent(kInputMouseUp, _currentX, _currentY)];
+//	});
+//}
+//- (void)releaseSecondary {
+//	[self pressLog:@"releaseSecondary"];
+//	execute_on_main_thread(^{
+//		[self addEvent:InternalEvent(kInputMouseSecondUp, _currentX, _currentY)];
+//	});
+//}
+//- (void)cancelPrimary {
+//	[self pressLog:@"cancelPrimary"];
+//	execute_on_main_thread(^{
+//		[self resetTouches];
+//	});
+//}
+//- (void)cancelSecondary {
+//	[self pressLog:@"cancelSecondary"];
+//	execute_on_main_thread(^{
+//		[self resetTouches];
+//	});
+//}
+
 //- (void)twoFingersDoubleTap:(UITapGestureRecognizer *)recognizer {
 //	NSLog(@"twoFingersDoubleTap");
 //	[self addEvent:InternalEvent(kInputTap, kUIViewTapDouble, 2)];

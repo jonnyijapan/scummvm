@@ -37,6 +37,9 @@
 #include "common/list.h"
 #include "graphics/scaler.h"
 
+#include "tvos_common.h"
+
+
 typedef struct {
 	GLfloat x, y;
 	GLfloat u,v;
@@ -126,12 +129,9 @@ typedef struct {
 
 - (bool)fetchEvent:(InternalEvent *)event;
 
-- (void)pressPrimary;
-- (void)pressSecondary;
-- (void)releasePrimary;
-- (void)releaseSecondary;
-- (void)cancelPrimary;
-- (void)cancelSecondary;
+- (void)press:(AppleTVRemoteButton)button;
+- (void)release:(AppleTVRemoteButton)button;
+- (void)cancel:(AppleTVRemoteButton)button;
 
 @end
 

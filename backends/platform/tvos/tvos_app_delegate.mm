@@ -129,37 +129,16 @@
 	return appDelegate->_view;
 }
 
-- (void)pressWithButton:(enum Button)button {
-	switch (button) {
-		case ButtonPrimary:
-			[_view pressPrimary];
-			break;
-		case ButtonSecondary:
-			[_view pressSecondary];
-			break;
-	}
+- (void)pressWithButton:(AppleTVRemoteButton)button {
+	[_view press:button];
 }
 
-- (void)releaseWithButton:(enum Button)button {
-	switch (button) {
-		case ButtonPrimary:
-			[_view releasePrimary];
-			break;
-		case ButtonSecondary:
-			[_view releaseSecondary];
-			break;
-	}
+- (void)releaseWithButton:(AppleTVRemoteButton)button {
+	[_view release:button];
 }
 
-- (void)cancelWithButton:(enum Button)button {
-	switch (button) {
-		case ButtonPrimary:
-			[_view cancelPrimary];
-			break;
-		case ButtonSecondary:
-			[_view cancelSecondary];
-			break;
-	}
+- (void)cancelWithButton:(AppleTVRemoteButton)button {
+	[_view cancel:button];
 }
 
 @end
@@ -167,7 +146,4 @@
 const char *iOS7_getDocumentsDir() {
 	NSString* dir = [[[NSBundle mainBundle] bundlePath] stringByAppendingPathComponent:@"rootgamescumm"];
 	return [dir UTF8String];
-//	NSArray *paths = NSSearchPathForDirectoriesInDomains(NSLibraryDirectory, NSUserDomainMask, YES);
-//	NSString *documentsDirectory = [paths objectAtIndex:0];
-//	return [documentsDirectory UTF8String];
 }

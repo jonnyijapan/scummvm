@@ -24,7 +24,7 @@
 #define FORBIDDEN_SYMBOL_ALLOW_ALL
 
 #include "backends/platform/ios7/ios7_osys_main.h"
-#include "backends/platform/ios7/ios7_video.h"
+#include "backends/platform/tvos/tvos_video.h" //#include "backends/platform/ios7/ios7_video.h"
 
 #include "graphics/conversion.h"
 #include "backends/platform/tvos/tvos_app_delegate.h"

@@ -8,17 +8,18 @@
 import UIKit
 
 @objc protocol Protocol_tvosscummvmviewcontroller: class {
-	func press(button: tvOSScummVMViewController.Button)
-	func release(button: tvOSScummVMViewController.Button)
-	func cancel(button: tvOSScummVMViewController.Button)
+	func press(button: AppleTVRemoteButton)
+	func release(button: AppleTVRemoteButton)
+	func cancel(button: AppleTVRemoteButton)
 }
 
 class tvOSScummVMViewController: UIViewController {
 	
-	@objc enum Button: Int {
-		case primary
-		case secondary
-	}
+//	@objc enum Button: Int {
+//		case primary
+//		case secondary
+//		case menu
+//	}
 	
 	weak var delegate: Protocol_tvosscummvmviewcontroller?
 	
@@ -53,8 +54,8 @@ class tvOSScummVMViewController: UIViewController {
 }
 
 private extension tvOSScummVMViewController {
-	static func fetchButton(from event: UIPressesEvent?) -> Button? {
-		let button: Button?
+	static func fetchButton(from event: UIPressesEvent?) -> AppleTVRemoteButton? {
+		let button: AppleTVRemoteButton?
 		
 		if let event = event, let press = event.allPresses.first {
 			switch press.type {
@@ -75,7 +76,7 @@ private extension tvOSScummVMViewController {
 				button = .primary
 				break
 			case .menu:
-				button = nil
+				button = .menu
 				break
 			case .playPause:
 				button = .secondary
