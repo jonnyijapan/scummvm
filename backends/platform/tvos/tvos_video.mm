@@ -1013,6 +1013,26 @@ uint getSizeNextPOT(uint size) {
 	NSLog(@"pressLog - main thread: %@ - %@", [NSThread isMainThread] ? @"yes" : @"no", text);
 }
 - (void)handleAction:(const AppleTVRemoteAction)ACTION button:(const AppleTVRemoteButton)BUTTON {
+	{
+		// Temp code because we're sharing too much with iOS7 code still.
+		BOOL goMenu = false;
+		switch (BUTTON) {
+			case primary:
+				break;
+			case secondary:
+				break;
+			case menu:
+				goMenu = true;
+				break;
+		}
+		if (goMenu) {
+			execute_on_main_thread(^{
+				[self addEvent:InternalEvent(kInputSwipe, kUIViewSwipeDown, 2)];
+			});
+			return;
+		}
+	}
+	
 	NSError* error;
 	const InputEvent EVENT = [AppleTVView inputeventFromAction:ACTION button:BUTTON error:&error];
 	if (error != nil) {
@@ -1072,17 +1092,7 @@ uint getSizeNextPOT(uint size) {
 			break;
 		case menu:
 			// TODO: fix this
-			switch (ACTION) {
-				case buttonDown:
-					event = kInputMouseSecondDown;
-					break;
-				case buttonUp:
-					*error = [NSError errorWithDomain:TvosErrorDomain code:0 userInfo:nil];
-					break;
-				case buttonCancel:
-					*error = [NSError errorWithDomain:TvosErrorDomain code:0 userInfo:nil];
-					break;
-			}
+			*error = [NSError errorWithDomain:TvosErrorDomain code:0 userInfo:nil];
 			break;
 		default:
 			*error = [NSError errorWithDomain:TvosErrorDomain code:0 userInfo:nil];
@@ -1091,30 +1101,7 @@ uint getSizeNextPOT(uint size) {
 	
 	return event;
 }
-//- (void)pressPrimary {
-//	[self pressLog:@"pressPrimary"];
-//	execute_on_main_thread(^{
-//		[self addEvent:InternalEvent(kInputMouseDown, _currentX, _currentY)];
-//	});
-//}
-//- (void)pressSecondary {
-//	[self pressLog:@"pressSecondary"];
-//	execute_on_main_thread(^{
-//		[self addEvent:InternalEvent(kInputMouseSecondDown, _currentX, _currentY)];
-//	});
-//}
-//- (void)releasePrimary {
-//	[self pressLog:@"releasePrimary"];
-//	execute_on_main_thread(^{
-//		[self addEvent:InternalEvent(kInputMouseUp, _currentX, _currentY)];
-//	});
-//}
-//- (void)releaseSecondary {
-//	[self pressLog:@"releaseSecondary"];
-//	execute_on_main_thread(^{
-//		[self addEvent:InternalEvent(kInputMouseSecondUp, _currentX, _currentY)];
-//	});
-//}
+
 //- (void)cancelPrimary {
 //	[self pressLog:@"cancelPrimary"];
 //	execute_on_main_thread(^{
