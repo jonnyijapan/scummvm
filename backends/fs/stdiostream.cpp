@@ -100,6 +100,7 @@ StdioStream *StdioStream::makeFromPath(const Common::String &path, bool writeMod
 
 	if (handle)
 		return new StdioStream(handle);
+	Common::String failedtocreatepath = path;
 	return 0;
 }
 
