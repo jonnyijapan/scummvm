@@ -44,16 +44,20 @@ void AIScriptGuzza::Initialize() {
 
 bool AIScriptGuzza::Update() {
 	if (Global_Variable_Query(kVariableChapter) == 2) {
-		if (!Game_Flag_Query(462)) {
-			Game_Flag_Set(462);
+		if (!Game_Flag_Query(kFlagPS04GuzzaLeft)) {
+			Game_Flag_Set(kFlagPS04GuzzaLeft);
 			Actor_Put_In_Set(kActorGuzza, kSetFreeSlotC);
 			Actor_Set_At_Waypoint(kActorGuzza, 35, 0);
-			Actor_Set_Goal_Number(kActorGuzza, 100);
+			Actor_Set_Goal_Number(kActorGuzza, kGoalGuzzaLeaveOffice);
 			return true;
 		}
-		if (Actor_Query_Goal_Number(kActorGuzza) != 101 && !Game_Flag_Query(463) && Game_Flag_Query(464)) {
-			Game_Flag_Set(463);
-			Actor_Set_Goal_Number(kActorGuzza, 103);
+
+		if ( Actor_Query_Goal_Number(kActorGuzza) != kGoalGuzzaGoToHawkersCircle1
+		 && !Game_Flag_Query(kFlagHC01GuzzaWalk)
+		 &&  Game_Flag_Query(kFlagHC01GuzzaPrepare)
+		) {
+			Game_Flag_Set(kFlagHC01GuzzaWalk);
+			Actor_Set_Goal_Number(kActorGuzza, kGoalGuzzaGoToHawkersCircle2);
 			return true;
 		}
 	}
@@ -66,26 +70,30 @@ void AIScriptGuzza::TimerExpired(int timer) {
 
 void AIScriptGuzza::CompletedMovementTrack() {
 	switch (Actor_Query_Goal_Number(kActorGuzza)) {
-	case 100:
-		Actor_Set_Goal_Number(kActorGuzza, 102);
+	case kGoalGuzzaLeaveOffice:
+		Actor_Set_Goal_Number(kActorGuzza, kGoalGuzzaGoToOffice);
 		// return true;
 		break;
-	case 102:
+
+	case kGoalGuzzaGoToOffice:
 		if (Random_Query(1, 2) == 1) {
-			Actor_Set_Goal_Number(kActorGuzza, 101);
+			Actor_Set_Goal_Number(kActorGuzza, kGoalGuzzaGoToHawkersCircle1);
 		} else {
-			Actor_Set_Goal_Number(kActorGuzza, 104);
+			Actor_Set_Goal_Number(kActorGuzza, kGoalGuzzaGoToFreeSlotB);
 		}
 		// return true;
 		break;
-	case 103:
-		Actor_Set_Goal_Number(kActorGuzza, 100);
+
+	case kGoalGuzzaGoToHawkersCircle2:
+		Actor_Set_Goal_Number(kActorGuzza, kGoalGuzzaLeaveOffice);
 		// return true;
 		break;
-	case 105:
-		Actor_Set_Goal_Number(kActorGuzza, 100);
+
+	case kGoalGuzzaGoToFreeSlotG:
+		Actor_Set_Goal_Number(kActorGuzza, kGoalGuzzaLeaveOffice);
 		// return true;
 		break;
+
 	}
 	// return false;
 }
@@ -95,13 +103,15 @@ void AIScriptGuzza::ReceivedClue(int clueId, int fromActorId) {
 }
 
 void AIScriptGuzza::ClickedByPlayer() {
-	if (Global_Variable_Query(kVariableChapter) == 2 && Game_Flag_Query(462) == 1) {
+	if (Global_Variable_Query(kVariableChapter) == 2
+	 && Game_Flag_Query(kFlagPS04GuzzaLeft)
+	) {
 		Actor_Face_Actor(kActorMcCoy, kActorGuzza, true);
 		if (Actor_Query_Friendliness_To_Other(kActorGordo, kActorMcCoy) < 48) {
 			Actor_Says(kActorMcCoy, 3970, 13);
 			Actor_Says(kActorGuzza, 780, -1);
 		}
-		//TODO: test this, seems like a bug in game
+		//TODO: test this, looks like a bug in game
 		if (Random_Query(1, 4) == 1) {
 			AI_Movement_Track_Pause(4);
 			Actor_Says(kActorMcCoy, 4005, 15);
@@ -138,23 +148,23 @@ void AIScriptGuzza::OtherAgentEnteredCombatMode(int otherActorId, int combatMode
 }
 
 void AIScriptGuzza::ShotAtAndMissed() {
-	if (Actor_Query_Goal_Number(kActorGuzza) == 301) {
-		Actor_Change_Animation_Mode(kActorGuzza, 22);
-		Actor_Set_Goal_Number(kActorGuzza, 304);
+	if (Actor_Query_Goal_Number(kActorGuzza) == kGoalGuzzaUG18Target) {
+		Actor_Change_Animation_Mode(kActorGuzza, kAnimationModeCombatHit);
+		Actor_Set_Goal_Number(kActorGuzza, kGoalGuzzaUG18MissedByMcCoy);
 	}
 	// return false;
 }
 
 bool AIScriptGuzza::ShotAtAndHit() {
-	if (Actor_Query_Goal_Number(kActorGuzza) == 301) {
-		Actor_Change_Animation_Mode(kActorGuzza, 22);
-		Actor_Set_Goal_Number(kActorGuzza, 303);
+	if (Actor_Query_Goal_Number(kActorGuzza) == kGoalGuzzaUG18Target) {
+		Actor_Change_Animation_Mode(kActorGuzza, kAnimationModeCombatHit);
+		Actor_Set_Goal_Number(kActorGuzza, kGoalGuzzaUG18HitByMcCoy);
 	}
 	return false;
 }
 
 void AIScriptGuzza::Retired(int byActorId) {
-	Actor_Set_Goal_Number(kActorGuzza, 599);
+	Actor_Set_Goal_Number(kActorGuzza, kGoalGuzzaGone);
 	// return false;
 }
 
@@ -164,14 +174,15 @@ int AIScriptGuzza::GetFriendlinessModifierIfGetsClue(int otherActorId, int clueI
 
 bool AIScriptGuzza::GoalChanged(int currentGoalNumber, int newGoalNumber) {
 	switch (newGoalNumber) {
-	case 100:
+	case kGoalGuzzaLeaveOffice:
 		AI_Movement_Track_Flush(kActorGuzza);
 		AI_Movement_Track_Append_With_Facing(kActorGuzza, 263, 0, 150);
 		AI_Movement_Track_Append_With_Facing(kActorGuzza, 263, 5, 150);
 		AI_Movement_Track_Append(kActorGuzza, 35, 90);
 		AI_Movement_Track_Repeat(kActorGuzza);
 		return true;
-	case 101:
+
+	case kGoalGuzzaGoToHawkersCircle1:
 		AI_Movement_Track_Flush(kActorGuzza);
 		AI_Movement_Track_Append(kActorGuzza, 258, 0);
 		AI_Movement_Track_Append(kActorGuzza, 260, 8);
@@ -179,53 +190,62 @@ bool AIScriptGuzza::GoalChanged(int currentGoalNumber, int newGoalNumber) {
 		AI_Movement_Track_Append(kActorGuzza, 262, 0);
 		AI_Movement_Track_Repeat(kActorGuzza);
 		return true;
-	case 102:
+
+	case kGoalGuzzaGoToOffice:
 		AI_Movement_Track_Flush(kActorGuzza);
 		AI_Movement_Track_Flush(kActorGuzza);
 		AI_Movement_Track_Append_With_Facing(kActorGuzza, 263, 600, 150);
 		AI_Movement_Track_Repeat(kActorGuzza);
 		return true;
-	case 103:
+
+	case kGoalGuzzaGoToHawkersCircle2:
 		AI_Movement_Track_Flush(kActorGuzza);
 		AI_Movement_Track_Append(kActorGuzza, 258, 0);
 		AI_Movement_Track_Append(kActorGuzza, 259, 1);
 		AI_Movement_Track_Append(kActorGuzza, 258, 0);
 		AI_Movement_Track_Repeat(kActorGuzza);
 		return true;
-	case 104:
+
+	case kGoalGuzzaGoToFreeSlotB:
 		AI_Movement_Track_Flush(kActorGuzza);
 		AI_Movement_Track_Append(kActorGuzza, 34, 60);
 		AI_Movement_Track_Repeat(kActorGuzza);
 		return true;
-	case 105:
+
+	case kGoalGuzzaGoToFreeSlotG:
 		AI_Movement_Track_Flush(kActorGuzza);
 		AI_Movement_Track_Append(kActorGuzza, 39, 120);
 		AI_Movement_Track_Repeat(kActorGuzza);
 		return true;
-	case 201:
-		Actor_Change_Animation_Mode(kActorGuzza, 53);
+
+	case kGoalGuzzaSitAtNR03:
+		Actor_Change_Animation_Mode(kActorGuzza, kAnimationModeSit);
 		_animationState = 1;
 		_animationFrame = 0;
 		Actor_Put_In_Set(kActorGuzza, kSetNR03);
 		Actor_Set_At_XYZ(kActorGuzza, -229.0f, -70.19f, -469.0f, 400);
 		return true;
-	case 300:
+
+	case kGoalGuzzaUG18Wait:
 		Actor_Put_In_Set(kActorGuzza, kSetUG18);
 		Actor_Set_At_XYZ(kActorGuzza, 10.79f, 0.0f, -354.17f, 400);
 		Actor_Change_Animation_Mode(kActorGuzza, kAnimationModeIdle);
 		return true;
-	case 301:
+
+	case kGoalGuzzaUG18Target:
 		Actor_Set_Targetable(kActorGuzza, true);
 		return true;
-	case 302:
-	case 303:
-	case 304:
+
+	case kGoalGuzzaUG18WillGetShotBySadik:
+	case kGoalGuzzaUG18HitByMcCoy:
+	case kGoalGuzzaUG18MissedByMcCoy:
 		Actor_Set_Targetable(kActorGuzza, false);
 		return true;
-	case 305:
-	case 306:
-	case 307:
-	case 390:
+
+	case kGoalGuzzaUG18ShotByMcCoy:
+	case kGoalGuzzaUG18ShootMcCoy:
+	case kGoalGuzzaUG18FallDown:
+	case kGoalGuzzaUG18ShotBySadik:
 		return true;
 	}
 	return false;
@@ -265,6 +285,7 @@ bool AIScriptGuzza::UpdateAnimation(int *animation, int *frame) {
 			break;
 		}
 		break;
+
 	case 1:
 		switch (_state) {
 		case 0:
@@ -320,6 +341,7 @@ bool AIScriptGuzza::UpdateAnimation(int *animation, int *frame) {
 			break;
 		}
 		break;
+
 	case 2:
 		if (_state == 0) {
 			*animation = _animationNext;
@@ -339,6 +361,7 @@ bool AIScriptGuzza::UpdateAnimation(int *animation, int *frame) {
 			}
 		}
 		break;
+
 	case 3:
 		switch (_state) {
 		case 0:
@@ -358,6 +381,7 @@ bool AIScriptGuzza::UpdateAnimation(int *animation, int *frame) {
 			_animationState = _animationStateNext;
 		}
 		break;
+
 	case 4:
 		*animation = 185;
 		_animationFrame++;
@@ -365,6 +389,7 @@ bool AIScriptGuzza::UpdateAnimation(int *animation, int *frame) {
 			_animationFrame = 0;
 		}
 		break;
+
 	case 5:
 		*animation = 186;
 		_animationFrame++;
@@ -372,6 +397,7 @@ bool AIScriptGuzza::UpdateAnimation(int *animation, int *frame) {
 			_animationFrame = 0;
 		}
 		break;
+
 	case 6:
 		*animation = 176;
 		_animationFrame++;
@@ -379,6 +405,7 @@ bool AIScriptGuzza::UpdateAnimation(int *animation, int *frame) {
 			_animationFrame = 0;
 		}
 		break;
+
 	case 7:
 		*animation = 177;
 		_animationFrame++;
@@ -386,6 +413,7 @@ bool AIScriptGuzza::UpdateAnimation(int *animation, int *frame) {
 			_animationFrame = 0;
 		}
 		break;
+
 	case 8:
 		*animation = 181;
 		_animationFrame++;
@@ -393,6 +421,7 @@ bool AIScriptGuzza::UpdateAnimation(int *animation, int *frame) {
 			_animationFrame = 0;
 		}
 		break;
+
 	case 9:
 		*animation = 187;
 		_animationFrame++;
@@ -400,6 +429,7 @@ bool AIScriptGuzza::UpdateAnimation(int *animation, int *frame) {
 			_animationFrame = 0;
 		}
 		break;
+
 	case 10:
 		*animation = 188;
 		_animationFrame++;
@@ -407,6 +437,7 @@ bool AIScriptGuzza::UpdateAnimation(int *animation, int *frame) {
 			_animationFrame = 0;
 		}
 		break;
+
 	case 11:
 		if (_animationFrame == 0 && _flag) {
 			*animation = 197;
@@ -423,6 +454,7 @@ bool AIScriptGuzza::UpdateAnimation(int *animation, int *frame) {
 			}
 		}
 		break;
+
 	case 12:
 		*animation = 202;
 		_animationFrame++;
@@ -432,6 +464,7 @@ bool AIScriptGuzza::UpdateAnimation(int *animation, int *frame) {
 			_animationState = 11;
 		}
 		break;
+
 	case 13:
 		*animation = 203;
 		_animationFrame++;
@@ -441,6 +474,7 @@ bool AIScriptGuzza::UpdateAnimation(int *animation, int *frame) {
 			_animationState = 11;
 		}
 		break;
+
 	case 14:
 		*animation = 204;
 		_animationFrame++;
@@ -450,6 +484,7 @@ bool AIScriptGuzza::UpdateAnimation(int *animation, int *frame) {
 			_animationState = 11;
 		}
 		break;
+
 	case 15:
 		*animation = 205;
 		_animationFrame++;
@@ -459,6 +494,7 @@ bool AIScriptGuzza::UpdateAnimation(int *animation, int *frame) {
 			_animationState = 11;
 		}
 		break;
+
 	case 16:
 		*animation = 206;
 		_animationFrame++;
@@ -468,6 +504,7 @@ bool AIScriptGuzza::UpdateAnimation(int *animation, int *frame) {
 			_animationState = 11;
 		}
 		break;
+
 	case 17:
 		if (_animationFrame == 0 && _flag) {
 			*animation = 189;
@@ -485,6 +522,7 @@ bool AIScriptGuzza::UpdateAnimation(int *animation, int *frame) {
 			}
 		}
 		break;
+
 	case 18:
 		*animation = 193;
 		_animationFrame++;
@@ -494,6 +532,7 @@ bool AIScriptGuzza::UpdateAnimation(int *animation, int *frame) {
 			_animationState = 17;
 		}
 		break;
+
 	case 19:
 		*animation = 194;
 		_animationFrame++;
@@ -503,6 +542,7 @@ bool AIScriptGuzza::UpdateAnimation(int *animation, int *frame) {
 			_animationFrame = 0;
 		}
 		break;
+
 	case 20:
 		*animation = 195;
 		_animationFrame++;
@@ -512,6 +552,7 @@ bool AIScriptGuzza::UpdateAnimation(int *animation, int *frame) {
 			_animationState = 17;
 		}
 		break;
+
 	case 21:
 		*animation = 196;
 		_animationFrame++;
@@ -521,12 +562,13 @@ bool AIScriptGuzza::UpdateAnimation(int *animation, int *frame) {
 			_animationState = 17;
 		}
 		break;
+
 	case 22:
 		if (_animationFrame == 0 && _flag) {
 			*animation = 172;
 			_animationState = 24;
 			_flag = false;
-			Actor_Change_Animation_Mode(kActorGuzza, 4);
+			Actor_Change_Animation_Mode(kActorGuzza, kAnimationModeCombatIdle);
 			_state = 0;
 			_counter = 0;
 			_frameDelta = 1;
@@ -538,6 +580,7 @@ bool AIScriptGuzza::UpdateAnimation(int *animation, int *frame) {
 			}
 		}
 		break;
+
 	case 23:
 		if (_animationFrame == 0 && _flag) {
 			*animation = 172;
@@ -555,12 +598,14 @@ bool AIScriptGuzza::UpdateAnimation(int *animation, int *frame) {
 			}
 		}
 		break;
+
 	case 24:
 		*animation = 172;
 		if (_animationFrame >= Slice_Animation_Query_Number_Of_Frames(172)) {
 			_animationFrame = 0;
 		}
 		break;
+
 	case 25:
 		*animation = 173;
 		_animationFrame++;
@@ -568,6 +613,7 @@ bool AIScriptGuzza::UpdateAnimation(int *animation, int *frame) {
 			_animationFrame = 0;
 		}
 		break;
+
 	case 26:
 		*animation = 174;
 		_animationFrame++;
@@ -578,6 +624,7 @@ bool AIScriptGuzza::UpdateAnimation(int *animation, int *frame) {
 			Actor_Change_Animation_Mode(kActorGuzza, kAnimationModeCombatIdle);
 		}
 		break;
+
 	case 27:
 		*animation = 175;
 		_animationFrame++;
@@ -588,6 +635,7 @@ bool AIScriptGuzza::UpdateAnimation(int *animation, int *frame) {
 			Actor_Change_Animation_Mode(kActorGuzza, kAnimationModeCombatIdle);
 		}
 		break;
+
 	case 29:
 		*animation = 182;
 		_animationFrame++;
@@ -597,6 +645,7 @@ bool AIScriptGuzza::UpdateAnimation(int *animation, int *frame) {
 			_animationState = 24;
 		}
 		break;
+
 	case 30:
 		*animation = 183;
 		_animationFrame++;
@@ -606,6 +655,7 @@ bool AIScriptGuzza::UpdateAnimation(int *animation, int *frame) {
 			_animationState = 0;
 		}
 		break;
+
 	case 31:
 		*animation = 184;
 		_animationFrame++;
@@ -616,6 +666,7 @@ bool AIScriptGuzza::UpdateAnimation(int *animation, int *frame) {
 			Actor_Change_Animation_Mode(kActorGuzza, kAnimationModeCombatIdle);
 		}
 		break;
+
 	case 32:
 		*animation = 200;
 		_animationFrame++;
@@ -626,6 +677,7 @@ bool AIScriptGuzza::UpdateAnimation(int *animation, int *frame) {
 			Actor_Change_Animation_Mode(kActorGuzza, kAnimationModeIdle);
 		}
 		break;
+
 	case 33:
 		*animation = 207;
 		_animationFrame++;
@@ -644,10 +696,12 @@ bool AIScriptGuzza::UpdateAnimation(int *animation, int *frame) {
 			}
 		}
 		break;
+
 	case 34:
 		*animation = 207;
 		_animationFrame = Slice_Animation_Query_Number_Of_Frames(207) - 1;
 		break;
+
 	default:
 		*animation = 399;
 		break;
@@ -699,14 +753,17 @@ bool AIScriptGuzza::ChangeAnimationMode(int mode) {
 			break;
 		}
 		break;
+
 	case kAnimationModeWalk:
 		_animationState = 4;
 		_animationFrame = 0;
 		break;
+
 	case kAnimationModeRun:
 		_animationState = 5;
 		_animationFrame = 0;
 		break;
+
 	case kAnimationModeTalk:
 		if (_animationState) {
 			_animationState = 11;
@@ -719,27 +776,34 @@ bool AIScriptGuzza::ChangeAnimationMode(int mode) {
 			_animationNext = 201;
 		}
 		break;
+
 	case kAnimationModeCombatIdle:
 		if (_animationState == 0) {
 			_animationState = 29;
 			_animationFrame = 0;
-		} else if (_animationState != 24 && _animationState != 29) {
+		} else if (_animationState != 24
+		        && _animationState != 29
+		) {
 			_animationState = 24;
 			_animationFrame = 0;
 		}
 		break;
+
 	case kAnimationModeCombatAttack:
 		_animationState = 31;
 		_animationFrame = 0;
 		break;
+
 	case kAnimationModeCombatWalk:
 		_animationState = 6;
 		_animationFrame = 0;
 		break;
+
 	case kAnimationModeCombatRun:
 		_animationState = 7;
 		_animationFrame = 0;
 		break;
+
 	case 12:
 		if (_animationState) {
 			_animationState = 12;
@@ -752,6 +816,7 @@ bool AIScriptGuzza::ChangeAnimationMode(int mode) {
 			_animationNext = 202;
 		}
 		break;
+
 	case 13:
 		if (_animationState) {
 			_animationState = 13;
@@ -764,6 +829,7 @@ bool AIScriptGuzza::ChangeAnimationMode(int mode) {
 			_animationNext = 203;
 		}
 		break;
+
 	case 14:
 		if (_animationState) {
 			_animationState = 14;
@@ -776,6 +842,7 @@ bool AIScriptGuzza::ChangeAnimationMode(int mode) {
 			_animationNext = 204;
 		}
 		break;
+
 	case 15:
 		if (_animationState) {
 			_animationState = 15;
@@ -788,6 +855,7 @@ bool AIScriptGuzza::ChangeAnimationMode(int mode) {
 			_animationNext = 205;
 		}
 		break;
+
 	case 16:
 		if (_animationState) {
 			_animationState = 16;
@@ -800,7 +868,8 @@ bool AIScriptGuzza::ChangeAnimationMode(int mode) {
 			_animationNext = 206;
 		}
 		break;
-	case 22:
+
+	case kAnimationModeCombatHit:
 		if (Random_Query(0, 1)) {
 			_animationState = 26;
 		} else {
@@ -808,10 +877,12 @@ bool AIScriptGuzza::ChangeAnimationMode(int mode) {
 		}
 		_animationFrame = 0;
 		break;
+
 	case 23:
 		_animationState = 32;
 		_animationFrame = 0;
 		break;
+
 	case 30:
 		if (_animationState == 1) {
 			_animationState = 3;
@@ -823,6 +894,7 @@ bool AIScriptGuzza::ChangeAnimationMode(int mode) {
 			_flag = false;
 		}
 		break;
+
 	case 31:
 		if (_animationState == 1) {
 			_animationState = 3;
@@ -834,6 +906,7 @@ bool AIScriptGuzza::ChangeAnimationMode(int mode) {
 			_flag = false;
 		}
 		break;
+
 	case 32:
 		if (_animationState == 1) {
 			_animationState = 3;
@@ -845,6 +918,7 @@ bool AIScriptGuzza::ChangeAnimationMode(int mode) {
 			_flag = false;
 		}
 		break;
+
 	case 33:
 		if (_animationState == 1) {
 			_animationState = 3;
@@ -856,6 +930,7 @@ bool AIScriptGuzza::ChangeAnimationMode(int mode) {
 			_flag = false;
 		}
 		break;
+
 	case 34:
 		if (_animationState == 1) {
 			_animationState = 3;
@@ -867,32 +942,39 @@ bool AIScriptGuzza::ChangeAnimationMode(int mode) {
 			_flag = false;
 		}
 		break;
+
 	case kAnimationModeWalkUp:
 		_animationState = 9;
 		_animationFrame = 0;
 		break;
+
 	case kAnimationModeWalkDown:
 		_animationState = 10;
 		_animationFrame = 0;
 		break;
+
 	case 48:
 		_animationState = 28;
 		_animationFrame = 0;
 		break;
+
 	case 53:
 		_animationState = 1;
 		_animationFrame = 0;
 		break;
+
 	case 58:
 		_animationState = 22;
 		_animationFrame = 0;
 		_flag = false;
 		break;
+
 	case 59:
 		_animationState = 23;
 		_animationFrame = 0;
 		_flag = false;
 		break;
+
 	case 61:
 		_animationState = 33;
 		_animationFrame = 0;

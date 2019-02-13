@@ -29,8 +29,9 @@
 #include "bladerunner/scene.h"
 #include "bladerunner/shape.h"
 #include "bladerunner/text_resource.h"
-#include "bladerunner/vqa_player.h"
+#include "bladerunner/time.h"
 #include "bladerunner/ui/ui_image_picker.h"
+#include "bladerunner/vqa_player.h"
 
 #include "common/rect.h"
 #include "common/system.h"
@@ -74,14 +75,14 @@ int Spinner::chooseDestination(int loopId, bool immediately) {
 	} else {
 		_vm->playerLosesControl();
 		_vm->_scene->loopStartSpecial(kSceneLoopModeSpinner, loopId, immediately);
-		while (!_isOpen) {
+		while (_vm->_gameIsRunning && !_isOpen) {
 			_vm->gameTick();
 		}
 		_vm->playerGainsControl();
 	}
 
-	_vqaPlayer = new VQAPlayer(_vm, &_vm->_surfaceBack);
-	if (!_vqaPlayer->open("SPINNER.VQA")) {
+	_vqaPlayer = new VQAPlayer(_vm, &_vm->_surfaceBack, "SPINNER.VQA");
+	if (!_vqaPlayer->open()) {
 		return 0;
 	}
 
@@ -155,11 +156,12 @@ int Spinner::chooseDestination(int loopId, bool immediately) {
 		this
 	);
 
-	// TODO: Freeze game time
+	_vm->_time->pause();
+
 	_selectedDestination = -1;
 	do {
 		_vm->gameTick();
-	} while (_selectedDestination == -1);
+	} while (_vm->_gameIsRunning && _selectedDestination == -1);
 
 	_imagePicker->deactivate();
 
@@ -176,7 +178,7 @@ int Spinner::chooseDestination(int loopId, bool immediately) {
 
 	_isOpen = false;
 
-	// TODO: Unfreeze game time
+	_vm->_time->resume();
 	_vm->_scene->resume();
 
 	return _selectedDestination;
@@ -207,7 +209,7 @@ int Spinner::handleMouseDown(int x, int y) {
 }
 
 void Spinner::tick() {
-	if (!_vm->_gameIsRunning) {
+	if (!_vm->_windowIsActive) {
 		return;
 	}
 

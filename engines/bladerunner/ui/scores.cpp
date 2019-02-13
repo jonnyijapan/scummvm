@@ -27,6 +27,7 @@
 #include "bladerunner/savefile.h"
 #include "bladerunner/scene.h"
 #include "bladerunner/text_resource.h"
+#include "bladerunner/time.h"
 #include "bladerunner/vqa_player.h"
 
 #include "common/keyboard.h"
@@ -50,15 +51,15 @@ void Scores::open() {
 		return;
 	}
 
-	_vqaPlayer = new VQAPlayer(_vm, &_vm->_surfaceBack);
+	_vqaPlayer = new VQAPlayer(_vm, &_vm->_surfaceBack, "SCORE.VQA");
 
-	if (!_vqaPlayer->open("SCORE.VQA")) {
+	if (!_vqaPlayer->open()) {
 		return;
 	}
 
 	_vqaPlayer->setLoop(1, -1, 0, nullptr, nullptr);
 
-	// TODO: Freeze game time
+	_vm->_time->pause();
 
 	_txtScorers = new TextResource(_vm);
 	_txtScorers->open("SCORERS");
@@ -94,7 +95,7 @@ void Scores::close() {
 
 	_vm->closeArchive("MODE.MIX");
 
-	// TODO: Unfreeze game time
+	_vm->_time->resume();
 	_vm->_scene->resume();
 }
 
@@ -128,7 +129,7 @@ int Scores::handleMouseDown(int x, int y) {
 }
 
 void Scores::tick() {
-	if (!_vm->_gameIsRunning) {
+	if (!_vm->_windowIsActive) {
 		return;
 	}
 

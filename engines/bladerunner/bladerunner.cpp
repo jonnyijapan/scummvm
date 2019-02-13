@@ -25,6 +25,7 @@
 #include "bladerunner/actor.h"
 #include "bladerunner/actor_dialogue_queue.h"
 #include "bladerunner/ambient_sounds.h"
+#include "bladerunner/audio_cache.h"
 #include "bladerunner/audio_mixer.h"
 #include "bladerunner/audio_player.h"
 #include "bladerunner/audio_speech.h"
@@ -60,6 +61,7 @@
 #include "bladerunner/shape.h"
 #include "bladerunner/slice_animations.h"
 #include "bladerunner/slice_renderer.h"
+#include "bladerunner/subtitles.h"
 #include "bladerunner/suspects_database.h"
 #include "bladerunner/text_resource.h"
 #include "bladerunner/time.h"
@@ -80,6 +82,7 @@
 #include "common/events.h"
 #include "common/savefile.h"
 #include "common/system.h"
+#include "common/debug-channels.h"
 
 #include "engines/util.h"
 #include "engines/advancedDetector.h"
@@ -92,19 +95,28 @@ BladeRunnerEngine::BladeRunnerEngine(OSystem *syst, const ADGameDescription *des
 	: Engine(syst),
 	  _rnd("bladerunner") {
 
+	DebugMan.addDebugChannel(kDebugScript, "Script", "Debug the scripts");
+
 	_windowIsActive = true;
 	_gameIsRunning  = true;
 
-	_vqaIsPlaying = false;
+	_vqaIsPlaying       = false;
 	_vqaStopIsRequested = false;
+
+	_actorIsSpeaking           = false;
+	_actorSpeakStopIsRequested = false;
+
+	_subtitlesEnabled = false;
+	_sitcomMode       = false;
+	_shortyMode       = false;
 
 	_playerLosesControlCounter = 0;
 
 	_playerActorIdle = false;
 	_playerDead      = false;
-	_speechSkipped   = false;
+
 	_gameOver        = false;
-	_gameAutoSave    = 0;
+	_gameAutoSave    = -1;
 	_gameIsLoading   = false;
 	_sceneIsLoading  = false;
 
@@ -149,7 +161,7 @@ BladeRunnerEngine::BladeRunnerEngine(OSystem *syst, const ADGameDescription *des
 	_lights                  = nullptr;
 	_obstacles               = nullptr;
 	_sceneScript             = nullptr;
-	_gameTime                = nullptr;
+	_time                    = nullptr;
 	_gameInfo                = nullptr;
 	_waypoints               = nullptr;
 	_gameVars                = nullptr;
@@ -157,6 +169,7 @@ BladeRunnerEngine::BladeRunnerEngine(OSystem *syst, const ADGameDescription *des
 	_sceneObjects            = nullptr;
 	_gameFlags               = nullptr;
 	_items                   = nullptr;
+	_audioCache              = nullptr;
 	_audioMixer              = nullptr;
 	_audioPlayer             = nullptr;
 	_music                   = nullptr;
@@ -181,6 +194,7 @@ BladeRunnerEngine::BladeRunnerEngine(OSystem *syst, const ADGameDescription *des
 	_scores                  = nullptr;
 	_elevator                = nullptr;
 	_mainFont                = nullptr;
+	_subtitles               = nullptr;
 	_esper                   = nullptr;
 	_vk                      = nullptr;
 	_policeMaze              = nullptr;
@@ -203,7 +217,82 @@ BladeRunnerEngine::~BladeRunnerEngine() {
 }
 
 bool BladeRunnerEngine::hasFeature(EngineFeature f) const {
-	return f == kSupportsRTL;
+	return
+		f == kSupportsRTL ||
+		f == kSupportsLoadingDuringRuntime ||
+		f == kSupportsSavingDuringRuntime;
+}
+
+bool BladeRunnerEngine::canLoadGameStateCurrently() {
+	return
+		playerHasControl() &&
+		!_sceneScript->isInsideScript() &&
+		!_aiScripts->isInsideScript() &&
+		!_kia->isOpen() &&
+		!_spinner->isOpen() &&
+		!_vk->isOpen() &&
+		!_elevator->isOpen();
+}
+
+Common::Error BladeRunnerEngine::loadGameState(int slot) {
+	Common::InSaveFile *saveFile = BladeRunner::SaveFileManager::openForLoading(_targetName, slot);
+	if (saveFile == nullptr || saveFile->err()) {
+		delete saveFile;
+		return Common::kReadingFailed;
+	}
+
+	BladeRunner::SaveFileHeader header;
+	if (!BladeRunner::SaveFileManager::readHeader(*saveFile, header)) {
+		error("Invalid savegame");
+	}
+
+	loadGame(*saveFile);
+
+	delete saveFile;
+
+	return Common::kNoError;
+}
+
+bool BladeRunnerEngine::canSaveGameStateCurrently() {
+	return
+		playerHasControl() &&
+		!_sceneScript->isInsideScript() &&
+		!_aiScripts->isInsideScript() &&
+		!_kia->isOpen() &&
+		!_spinner->isOpen() &&
+		!_vk->isOpen() &&
+		!_elevator->isOpen();
+}
+
+Common::Error BladeRunnerEngine::saveGameState(int slot, const Common::String &desc) {
+	Common::OutSaveFile *saveFile = BladeRunner::SaveFileManager::openForSaving(_targetName, slot);
+	if (saveFile == nullptr || saveFile->err()) {
+		delete saveFile;
+		return Common::kReadingFailed;
+	}
+
+	Graphics::Surface thumbnail = generateThumbnail();
+
+	BladeRunner::SaveFileHeader header;
+	header._name = desc;
+
+	BladeRunner::SaveFileManager::writeHeader(*saveFile, header);
+
+	_time->pause();
+	saveGame(*saveFile, thumbnail);
+	_time->resume();
+
+	saveFile->finalize();
+
+	thumbnail.free();
+
+	delete saveFile;
+
+	return Common::kNoError;
+}
+
+void BladeRunnerEngine::pauseEngineIntern(bool pause) {
+	_mixer->pauseAll(pause);
 }
 
 Common::Error BladeRunnerEngine::run() {
@@ -212,25 +301,29 @@ Common::Error BladeRunnerEngine::run() {
 
 	_system->showMouse(true);
 
-	if (!startup()) {
+	bool hasSavegames = !SaveFileManager::list(_targetName).empty();
+
+	if (!startup(hasSavegames)) {
 		shutdown();
 		return Common::Error(Common::kUnknownError, "Failed to initialize resources");
 	}
 
-#if BLADERUNNER_DEBUG_GAME
-	{
-#else
 	if (warnUserAboutUnsupportedGame()) {
-#endif
-		init2();
+		if (hasSavegames) {
+			_kia->_forceOpen = true;
+			_kia->open(kKIASectionLoad);
+		}
+		// TODO: why is game starting new game here when everything is done in startup?
+		//  else {
+		// 	newGame(1);
+		// }
 
-		/* TODO: Check for save games and enter KIA */
 		gameLoop();
 
 		_mouse->disable();
 
 		if (_gameOver) {
-			// autoSaveGame(4, 1); // TODO
+			autoSaveGame(4, true);
 			_endCredits->show();
 		}
 	}
@@ -255,9 +348,7 @@ bool BladeRunnerEngine::startup(bool hasSavegames) {
 
 	_lights = new Lights(this);
 
-	// TODO: outtake player - but this is done bit differently
-
-	_policeMaze = new PoliceMaze(this);
+	// outtake player was initialized here in the original game - but this is done bit differently
 
 	_obstacles = new Obstacles(this);
 
@@ -267,13 +358,19 @@ bool BladeRunnerEngine::startup(bool hasSavegames) {
 
 	// This is the original startup in the game
 
-	bool r;
-
 	_surfaceFront.create(640, 480, createRGB555());
 	_surfaceBack.create(640, 480, createRGB555());
-	_surface4.create(640, 480, createRGB555());
 
-	_gameTime = new Time(this);
+	_time = new Time(this);
+
+	// Try to load the SUBTITLES.MIX first, before Startup.MIX
+	// allows overriding any identically named resources (such as the original font files and as a bonus also the TRE files for the UI and dialogue menu)
+	_subtitles = new Subtitles(this);
+	bool r = openArchive("SUBTITLES.MIX");
+	if (!r) {
+		_subtitles->setSubtitlesSystemInactive(true); // no subtitles support
+	}
+	_subtitles->init();
 
 	r = openArchive("STARTUP.MIX");
 	if (!r)
@@ -288,14 +385,6 @@ bool BladeRunnerEngine::startup(bool hasSavegames) {
 		return false;
 	}
 
-	_combat = new Combat(this);
-
-	// TODO: Create datetime - not used
-
-	// TODO: Create graphics surfaces 1-4
-
-	// TODO: Allocate audio cache
-
 	if (hasSavegames) {
 		if (!loadSplash()) {
 			return false;
@@ -304,19 +393,14 @@ bool BladeRunnerEngine::startup(bool hasSavegames) {
 
 	_waypoints = new Waypoints(this, _gameInfo->getWaypointCount());
 
-	// TODO: Cover waypoints
-
-	// TODO: Flee waypoints
+	_combat = new Combat(this);
 
 	_gameVars = new int[_gameInfo->getGlobalVarCount()]();
 
-	// TODO: Actor AI DLL init
-
 	// Seed rand
 
-	// TODO: Sine and cosine lookup tables for intervals of 1.0, 4.0, and 12.0
-	_cosTable1024 = new Common::CosineTable(1024); // 10-bits = 1024 points for 2*PI;	
-	_sinTable1024 = new Common::SineTable(1024);	
+	_cosTable1024 = new Common::CosineTable(1024); // 10-bits = 1024 points for 2*PI;
+	_sinTable1024 = new Common::SineTable(1024);
 
 	_view = new View();
 
@@ -325,7 +409,17 @@ bool BladeRunnerEngine::startup(bool hasSavegames) {
 	_gameFlags = new GameFlags();
 	_gameFlags->setFlagCount(_gameInfo->getFlagCount());
 
+	// Assign default values to the ScummVM configuration manager, in case settings are missing
+	ConfMan.registerDefault("subtitles", "true");
+	// get value from the ScummVM configuration manager
+	_subtitlesEnabled = ConfMan.getBool("subtitles");
+
+	_sitcomMode = ConfMan.getBool("sitcom");
+	_shortyMode = ConfMan.getBool("shorty");
+
 	_items = new Items(this);
+
+	_audioCache = new AudioCache();
 
 	_audioMixer = new AudioMixer(this);
 
@@ -337,7 +431,7 @@ bool BladeRunnerEngine::startup(bool hasSavegames) {
 
 	_ambientSounds = new AmbientSounds(this);
 
-	// TODO: Read BLADE.INI
+	// BLADE.INI was read here, but it was replaced by ScummVM configuration
 
 	_chapters = new Chapters(this);
 	if (!_chapters)
@@ -362,15 +456,12 @@ bool BladeRunnerEngine::startup(bool hasSavegames) {
 	assert(actorCount < kActorCount);
 	for (int i = 0; i != actorCount; ++i) {
 		_actors[i] = new Actor(this, i);
-		_actors[i]->setup(i);
 	}
 	_actors[kActorVoiceOver] = new Actor(this, kActorVoiceOver);
 	_playerActor = _actors[_gameInfo->getPlayerId()];
 
 	_playerActor->setFPS(15);
 	_playerActor->timerStart(6, 200);
-
-	// TODO: Set actor ids (redundant?)
 
 	_policeMaze = new PoliceMaze(this);
 
@@ -431,7 +522,6 @@ bool BladeRunnerEngine::startup(bool hasSavegames) {
 	_vk = new VK(this);
 
 	_mouse = new Mouse(this);
-	// _mouse->setCursorPosition(320, 240);
 	_mouse->setCursor(0);
 
 	_sliceAnimations = new SliceAnimations(this);
@@ -449,14 +539,13 @@ bool BladeRunnerEngine::startup(bool hasSavegames) {
 
 	_crimesDatabase = new CrimesDatabase(this, "CLUES", _gameInfo->getClueCount());
 
-	// TODO: Scene
 	_scene = new Scene(this);
 
 	// Load INIT.DLL
 	InitScript initScript(this);
 	initScript.SCRIPT_Initialize_Game();
 
-	// TODO: Load AI-ACT1.DLL
+	// Load AI-ACT1.DLL
 	_aiScripts = new AIScripts(this, actorCount);
 
 	initChapterAndScene();
@@ -465,7 +554,6 @@ bool BladeRunnerEngine::startup(bool hasSavegames) {
 }
 
 void BladeRunnerEngine::initChapterAndScene() {
-	// TODO: Init actors...
 	for (int i = 0, end = _gameInfo->getActorCount(); i != end; ++i) {
 		_aiScripts->initialize(i);
 	}
@@ -497,31 +585,13 @@ void BladeRunnerEngine::initChapterAndScene() {
 void BladeRunnerEngine::shutdown() {
 	_mixer->stopAll();
 
-	// TODO: Write BLADE.INI
+	// BLADE.INI as updated here
 
-	delete _vk;
-	_vk = nullptr;
+	delete _aiScripts;
+	_aiScripts = nullptr;
 
-	delete _esper;
-	_esper = nullptr;
-
-	delete _mouse;
-	_mouse = nullptr;
-
-	for (uint i = 0; i != _shapes.size(); ++i) {
-		delete _shapes[i];
-	}
-	_shapes.clear();
-
-	// TODO: Shutdown Scene
 	delete _scene;
-
-	if (_chapters) {
-		if (_chapters->hasOpenResources())
-			_chapters->closeResources();
-		delete _chapters;
-		_chapters = nullptr;
-	}
+	_scene = nullptr;
 
 	delete _crimesDatabase;
 	_crimesDatabase = nullptr;
@@ -532,59 +602,20 @@ void BladeRunnerEngine::shutdown() {
 	delete _sliceAnimations;
 	_sliceAnimations = nullptr;
 
-	delete _textActorNames;
-	_textActorNames = nullptr;
+	delete _mouse;
+	_mouse = nullptr;
 
-	delete _textCrimes;
-	_textCrimes = nullptr;
+	delete _vk;
+	_vk = nullptr;
 
-	delete _textClueTypes;
-	_textClueTypes = nullptr;
+	delete _esper;
+	_esper = nullptr;
 
-	delete _textKIA;
-	_textKIA = nullptr;
-
-	delete _textSpinnerDestinations;
-	_textSpinnerDestinations = nullptr;
-
-	delete _textVK;
-	_textVK = nullptr;
-
-	delete _textOptions;
-	_textOptions = nullptr;
-
-	delete _dialogueMenu;
-	_dialogueMenu = nullptr;
-
-	delete _ambientSounds;
-	_ambientSounds = nullptr;
-
-	delete _overlays;
-	_overlays = nullptr;
-
-	delete _audioSpeech;
-	_audioSpeech = nullptr;
-
-	delete _music;
-	_music = nullptr;
-
-	delete _audioPlayer;
-	_audioPlayer = nullptr;
-
-	delete _audioMixer;
-	_audioMixer = nullptr;
-
-	if (isArchiveOpen("MUSIC.MIX")) {
-		closeArchive("MUSIC.MIX");
+	/// todo
+	for (uint i = 0; i != _shapes.size(); ++i) {
+		delete _shapes[i];
 	}
-
-	if (isArchiveOpen("SFX.MIX")) {
-		closeArchive("SFX.MIX");
-	}
-
-	if (isArchiveOpen("SPCHSFX.TLK")) {
-		closeArchive("SPCHSFX.TLK");
-	}
+	_shapes.clear();
 
 	if (_mainFont) {
 		_mainFont->close();
@@ -592,39 +623,8 @@ void BladeRunnerEngine::shutdown() {
 		_mainFont = nullptr;
 	}
 
-	delete _items;
-	_items = nullptr;
-
-	delete _gameFlags;
-	_gameFlags = nullptr;
-
-	delete _view;
-	_view = nullptr;
-
-	delete _sceneObjects;
-	_sceneObjects = nullptr;
-
-	delete _cosTable1024;
-	delete _sinTable1024;
-
-	delete _aiScripts;
-	_aiScripts = nullptr;
-
-	delete[] _gameVars;
-	_gameVars = nullptr;
-
-	delete _waypoints;
-	_waypoints = nullptr;
-
-	// TODO: Delete Cover waypoints
-
-	// TODO: Delete Flee waypoints
-
 	delete _scores;
 	_scores = nullptr;
-
-	delete _endCredits;
-	_endCredits = nullptr;
 
 	delete _elevator;
 	_elevator = nullptr;
@@ -638,69 +638,160 @@ void BladeRunnerEngine::shutdown() {
 	delete _suspectsDatabase;
 	_suspectsDatabase = nullptr;
 
-	// TODO: Delete datetime - not used
+	delete _dialogueMenu;
+	_dialogueMenu = nullptr;
 
+	delete _textOptions;
+	_textOptions = nullptr;
+
+	delete _textVK;
+	_textVK = nullptr;
+
+	delete _textSpinnerDestinations;
+	_textSpinnerDestinations = nullptr;
+
+	delete _textKIA;
+	_textKIA = nullptr;
+
+	delete _textClueTypes;
+	_textClueTypes = nullptr;
+
+	delete _textCrimes;
+	_textCrimes = nullptr;
+
+	delete _textActorNames;
+	_textActorNames = nullptr;
+
+	delete _policeMaze;
+	_policeMaze = nullptr;
+
+	_playerActor = nullptr;
+	delete _actors[kActorVoiceOver];
+	_actors[kActorVoiceOver] = nullptr;
 	int actorCount = (int)_gameInfo->getActorCount();
-	for (int i = 0; i != actorCount; ++i) {
+	for (int i = 0; i < actorCount; ++i) {
 		delete _actors[i];
 		_actors[i] = nullptr;
 	}
-	delete _actors[kActorVoiceOver];
-	_actors[kActorVoiceOver] = nullptr;
 
-	_playerActor = nullptr;
+	delete _zbuffer;
+	_zbuffer = nullptr;
+
+	delete _overlays;
+	_overlays = nullptr;
+
+	if (isArchiveOpen("SPCHSFX.TLK")) {
+		closeArchive("SPCHSFX.TLK");
+	}
+
+	if (isArchiveOpen("SFX.MIX")) {
+		closeArchive("SFX.MIX");
+	}
+
+	if (isArchiveOpen("MUSIC.MIX")) {
+		closeArchive("MUSIC.MIX");
+	}
+
+	if (_chapters) {
+		if (_chapters->hasOpenResources())
+			_chapters->closeResources();
+		delete _chapters;
+		_chapters = nullptr;
+	}
+
+	delete _ambientSounds;
+	_ambientSounds = nullptr;
+
+	delete _audioSpeech;
+	_audioSpeech = nullptr;
+
+	delete _music;
+	_music = nullptr;
+
+	delete _audioPlayer;
+	_audioPlayer = nullptr;
+
+	delete _audioMixer;
+	_audioMixer = nullptr;
+
+	delete _audioCache;
+	_audioCache = nullptr;
+
+	delete _items;
+	_items = nullptr;
+
+	delete _gameFlags;
+	_gameFlags = nullptr;
+
+	delete _sceneObjects;
+	_sceneObjects = nullptr;
+
+	delete _view;
+	_view = nullptr;
+
+	delete _sinTable1024;
+	_sinTable1024 = nullptr;
+	delete _cosTable1024;
+	_cosTable1024 = nullptr;
+
+	delete[] _gameVars;
+	_gameVars = nullptr;
+
+	delete _combat;
+	_combat = nullptr;
+
+	delete _waypoints;
+	_waypoints = nullptr;
 
 	delete _gameInfo;
 	_gameInfo = nullptr;
-
-	// TODO: Delete graphics surfaces here
-	_surface4.free();
-	_surfaceBack.free();
-	_surfaceFront.free();
 
 	if (isArchiveOpen("STARTUP.MIX")) {
 		closeArchive("STARTUP.MIX");
 	}
 
-	// TODO: Delete MIXArchives here
+	if (isArchiveOpen("SUBTITLES.MIX")) {
+		closeArchive("SUBTITLES.MIX");
+	}
+	if (_subtitles) {
+		delete _subtitles;
+		_subtitles = nullptr;
+	}
 
-	delete _gameTime;
-	_gameTime = nullptr;
+	delete _time;
+	_time = nullptr;
+
+	_surfaceBack.free();
+	_surfaceFront.free();
 
 	// These are static objects in original game
 
 	delete _debugger;
 	_debugger = nullptr;
 
-	delete _zbuffer;
-	_zbuffer = nullptr;
-
-	delete _itemPickup;
-	_itemPickup = nullptr;
-
-	delete _policeMaze;
-	_policeMaze = nullptr;
+	delete _sceneScript;
+	_sceneScript = nullptr;
 
 	delete _obstacles;
 	_obstacles = nullptr;
 
-	delete _actorDialogueQueue;
-	_actorDialogueQueue = nullptr;
-
-	delete _combat;
-	_combat = nullptr;
-
-	delete _screenEffects;
-	_screenEffects = nullptr;
-
 	delete _lights;
 	_lights = nullptr;
+
+	delete _itemPickup;
+	_itemPickup = nullptr;
 
 	delete _settings;
 	_settings = nullptr;
 
-	delete _sceneScript;
-	_sceneScript = nullptr;
+	delete _actorDialogueQueue;
+	_actorDialogueQueue = nullptr;
+
+	delete _endCredits;
+	_endCredits = nullptr;
+
+	delete _screenEffects;
+	_screenEffects = nullptr;
 }
 
 bool BladeRunnerEngine::loadSplash() {
@@ -713,10 +804,6 @@ bool BladeRunnerEngine::loadSplash() {
 
 	blitToScreen(_surfaceFront);
 
-	return true;
-}
-
-bool BladeRunnerEngine::init2() {
 	return true;
 }
 
@@ -734,7 +821,10 @@ bool BladeRunnerEngine::isMouseButtonDown() const {
 void BladeRunnerEngine::gameLoop() {
 	_gameIsRunning = true;
 	do {
-		/* TODO: check player death */
+		if (_playerDead) {
+			playerDied();
+			_playerDead = false;
+		}
 		gameTick();
 	} while (_gameIsRunning);
 }
@@ -742,153 +832,166 @@ void BladeRunnerEngine::gameLoop() {
 void BladeRunnerEngine::gameTick() {
 	handleEvents();
 
-	if (_gameIsRunning && _windowIsActive) {
-		// TODO: Only run if not in Kia, script, nor AI
-		if (!_sceneScript->isInsideScript() && !_aiScripts->isInsideScript()) {
-			_settings->openNewScene();
-		}
+	if (!_gameIsRunning || !_windowIsActive) {
+		return;
+	}
 
-		// TODO: Autosave
+	if (!_kia->isOpen() && !_sceneScript->isInsideScript() && !_aiScripts->isInsideScript()) {
+		_settings->openNewScene();
+	}
 
-		//probably not needed, this version of tick is just loading data from buffer
-		//_audioMixer->tick();
+	if (_gameAutoSave >= 0) {
+		autoSaveGame(_gameAutoSave, false);
+		_gameAutoSave = -1;
+	}
 
-		if (_kia->isOpen()) {
-			_kia->tick();
-			return;
-		}
+	//probably not needed, this version of tick is just loading data from buffer
+	//_audioMixer->tick();
 
-		if (_spinner->isOpen()) {
-			_spinner->tick();
-			_ambientSounds->tick();
-			return;
-		}
+	if (_kia->isOpen()) {
+		_kia->tick();
+		return;
+	}
 
-		if (_esper->isOpen()) {
-			_esper->tick();
-			return;
-		}
-
-		if (_vk->isOpen()) {
-			_vk->tick();
-			_ambientSounds->tick();
-			return;
-		}
-
-		if (_elevator->isOpen()) {
-			_elevator->tick();
-			_ambientSounds->tick();
-			return;
-		}
-
-		if (_scores->isOpen()) {
-			_scores->tick();
-			_ambientSounds->tick();
-			return;
-		}
-
-		_actorDialogueQueue->tick();
-		if (_scene->didPlayerWalkIn()) {
-			_sceneScript->playerWalkedIn();
-		}
-		bool inDialogueMenu = _dialogueMenu->isVisible();
-		if  (!inDialogueMenu) {
-			for (int i = 0; i < (int)_gameInfo->getActorCount(); ++i) {
-				_actors[i]->tickCombat();
-			}
-		}
-
-		_policeMaze->tick();
-
-		// TODO: Gun range announcements
-		_zbuffer->clean();
-
+	if (_spinner->isOpen()) {
+		_spinner->tick();
 		_ambientSounds->tick();
+		return;
+	}
 
-		bool backgroundChanged = false;
-		int frame = _scene->advanceFrame();
-		if (frame >= 0) {
-			_sceneScript->sceneFrameAdvanced(frame);
-			backgroundChanged = true;
-		}
-		(void)backgroundChanged;
-		blit(_surfaceBack, _surfaceFront);
+	if (_esper->isOpen()) {
+		_esper->tick();
+		return;
+	}
 
-		_overlays->tick();
+	if (_vk->isOpen()) {
+		_vk->tick();
+		_ambientSounds->tick();
+		return;
+	}
 
-		if (!inDialogueMenu) {
-			actorsUpdate();
-		}
+	if (_elevator->isOpen()) {
+		_elevator->tick();
+		_ambientSounds->tick();
+		return;
+	}
 
-		if (_settings->getNewScene() == -1 || _sceneScript->isInsideScript() || _aiScripts->isInsideScript()) {
-			_sliceRenderer->setView(_view);
+	if (_scores->isOpen()) {
+		_scores->tick();
+		_ambientSounds->tick();
+		return;
+	}
 
-			// Tick and draw all actors in current set
-			int setId = _scene->getSetId();
-			for (int i = 0, end = _gameInfo->getActorCount(); i != end; ++i) {
-				if (_actors[i]->getSetId() == setId) {
-					Common::Rect screenRect;
-					if (_actors[i]->tick(backgroundChanged, &screenRect)) {
-						_zbuffer->mark(screenRect);
-					}
-				}
-			}
+	_actorDialogueQueue->tick();
+	if (_scene->didPlayerWalkIn()) {
+		_sceneScript->playerWalkedIn();
+	}
 
-			_items->tick();
-
-			_itemPickup->tick();
-			_itemPickup->draw();
-
-			Common::Point p = getMousePos();
-
-			if (_dialogueMenu->isVisible()) {
-				_dialogueMenu->tick(p.x, p.y);
-				_dialogueMenu->draw(_surfaceFront);
-			}
-
-			if (_debugger->_viewZBuffer) {
-				_surfaceFront.copyRectToSurface(_zbuffer->getData(), 1280, 0, 0, 640, 480);
-			}
-
-			_mouse->tick(p.x, p.y);
-			_mouse->draw(_surfaceFront, p.x, p.y);
-
-			// TODO: Process AUD
-
-			if (_walkSoundId >= 0) {
-				_audioPlayer->playAud(_gameInfo->getSfxTrack(_walkSoundId), _walkSoundVolume, _walkSoundBalance, _walkSoundBalance, 50, 0);
-				_walkSoundId = -1;
-			}
-
-			if (_debugger->_viewSceneObjects) {
-				_debugger->drawSceneObjects();
-			}
-			if (_debugger->_viewObstacles) {
-				_obstacles->draw();
-			}
-
-			blitToScreen(_surfaceFront);
-			_system->delayMillis(10);
+	bool inDialogueMenu = _dialogueMenu->isVisible();
+	if  (!inDialogueMenu) {
+		for (int i = 0; i < (int)_gameInfo->getActorCount(); ++i) {
+			_actors[i]->tickCombat();
 		}
 	}
+
+	_policeMaze->tick();
+
+	_zbuffer->clean();
+
+	_ambientSounds->tick();
+
+	bool backgroundChanged = false;
+	int frame = _scene->advanceFrame();
+	if (frame >= 0) {
+		_sceneScript->sceneFrameAdvanced(frame);
+		backgroundChanged = true;
+	}
+	blit(_surfaceBack, _surfaceFront);
+
+	_overlays->tick();
+
+	if (!inDialogueMenu) {
+		actorsUpdate();
+	}
+
+	if (_settings->getNewScene() != -1 && !_sceneScript->isInsideScript() && !_aiScripts->isInsideScript()) {
+		return;
+	}
+
+	_sliceRenderer->setView(_view);
+
+	// Tick and draw all actors in current set
+	int setId = _scene->getSetId();
+	for (int i = 0, end = _gameInfo->getActorCount(); i != end; ++i) {
+		if (_actors[i]->getSetId() == setId) {
+			Common::Rect screenRect;
+			if (_actors[i]->tick(backgroundChanged, &screenRect)) {
+				_zbuffer->mark(screenRect);
+			}
+		}
+	}
+
+	_items->tick();
+
+	_itemPickup->tick();
+	_itemPickup->draw();
+
+	Common::Point p = getMousePos();
+
+	if (_dialogueMenu->isVisible()) {
+		_dialogueMenu->tick(p.x, p.y);
+		_dialogueMenu->draw(_surfaceFront);
+	}
+
+	if (_debugger->_viewZBuffer) {
+		_surfaceFront.copyRectToSurface(_zbuffer->getData(), 1280, 0, 0, 640, 480);
+	}
+
+	_mouse->tick(p.x, p.y);
+	_mouse->draw(_surfaceFront, p.x, p.y);
+
+	if (_walkSoundId >= 0) {
+		_audioPlayer->playAud(_gameInfo->getSfxTrack(_walkSoundId), _walkSoundVolume, _walkSoundBalance, _walkSoundBalance, 50, 0);
+		_walkSoundId = -1;
+	}
+
+	if (_debugger->_isDebuggerOverlay) {
+		_debugger->drawDebuggerOverlay();
+	}
+
+	if (_debugger->_viewObstacles) {
+		_obstacles->draw();
+	}
+
+	_subtitles->tick(_surfaceFront);
+
+	blitToScreen(_surfaceFront);
+	_system->delayMillis(10);
 }
 
 void BladeRunnerEngine::actorsUpdate() {
 	int actorCount = (int)_gameInfo->getActorCount();
 	int setId = _scene->getSetId();
 
-	if (setId != kSetUG18 || _gameVars[kVariableChapter] != 4 || !_gameFlags->query(670) || !_aiScripts->isInsideScript()) {
-		for (int i = 0; i < actorCount; i++) {
-			Actor *actor = _actors[i];
-			if (actor->getSetId() == setId || i == _actorUpdateCounter) {
-				_aiScripts->update(i);
-				actor->timersUpdate();
-			}
+	// what a "nice" last minute fix...
+	if ( setId == kSetUG18
+	 && _gameVars[kVariableChapter] == 4
+	 && _gameFlags->query(kFlagCallWithGuzza)
+	 && _aiScripts->isInsideScript()
+	) {
+		return;
+	}
+
+	for (int i = 0; i < actorCount; i++) {
+		Actor *actor = _actors[i];
+		if (actor->getSetId() == setId || i == _actorUpdateCounter) {
+			_aiScripts->update(i);
+			actor->timersUpdate();
 		}
-		++_actorUpdateCounter;
-		if (_actorUpdateCounter >= actorCount) {
-			_actorUpdateCounter = 0;
-		}
+	}
+	++_actorUpdateCounter;
+	if (_actorUpdateCounter >= actorCount) {
+		_actorUpdateCounter = 0;
 	}
 }
 
@@ -948,8 +1051,11 @@ void BladeRunnerEngine::handleEvents() {
 }
 
 void BladeRunnerEngine::handleKeyUp(Common::Event &event) {
-	if (event.kbd.keycode == Common::KEYCODE_RETURN) {
-		_speechSkipped = true;
+	if (_actorIsSpeaking && event.kbd.keycode == Common::KEYCODE_RETURN) {
+		_actorSpeakStopIsRequested = true;
+		_actorIsSpeaking = false;
+
+		return;
 	}
 
 	if (_vqaIsPlaying) {
@@ -959,8 +1065,7 @@ void BladeRunnerEngine::handleKeyUp(Common::Event &event) {
 		return;
 	}
 
-	// TODO:
-	if (!playerHasControl() /*|| ActorInWalkingLoop*/) {
+	if (!playerHasControl() || _isWalkingInterruptible) {
 		return;
 	}
 
@@ -1001,7 +1106,7 @@ void BladeRunnerEngine::handleKeyUp(Common::Event &event) {
 			_kia->open(kKIASectionSettings);
 			break;
 		case Common::KEYCODE_SPACE:
-			// TODO: combat::switchCombatMode(&Combat);
+			_combat->change();
 			break;
 		default:
 			break;
@@ -1015,13 +1120,13 @@ void BladeRunnerEngine::handleKeyDown(Common::Event &event) {
 		return;
 	}
 
-	//TODO:
-	if (!playerHasControl() /* || ActorWalkingLoop || ActorSpeaking || VqaIsPlaying */) {
+	if (!playerHasControl() || _isWalkingInterruptible || _actorIsSpeaking || _vqaIsPlaying) {
 		return;
 	}
 
 	if (_kia->isOpen()) {
 		_kia->handleKeyDown(event.kbd);
+		return;
 	}
 
 	if (_spinner->isOpen()) {
@@ -1076,7 +1181,7 @@ void BladeRunnerEngine::handleMouseAction(int x, int y, bool mainButton, bool bu
 	x = CLIP(x, 0, 639);
 	y = CLIP(y, 0, 479);
 
-	int timeNow = getTotalPlayTime();
+	int timeNow = _time->current();
 
 	if (buttonDown) {
 		_mouseClickTimeDiff = timeNow - _mouseClickTimeLast;
@@ -1173,16 +1278,18 @@ void BladeRunnerEngine::handleMouseAction(int x, int y, bool mainButton, bool bu
 			handleMouseClick3DObject(sceneObjectId - kSceneObjectOffsetObjects, buttonDown, isClickable, isTarget);
 		}
 	} else if (buttonDown) {
-		if (_playerActor->inWalkLoop()) {
+		if (_playerActor->mustReachWalkDestination()) {
+			if (!_isWalkingInterruptible) {
+				return;
+			}
 			_playerActor->stopWalking(false);
+			_interruptWalking = true;
 		}
 		_combat->change();
 	}
 }
 
 void BladeRunnerEngine::handleMouseClickExit(int exitId, int x, int y, bool buttonDown) {
-	debug("clicked on exit %d %d %d", exitId, x, y);
-
 	if (_isWalkingInterruptible && exitId != _walkingToExitId) {
 		_isWalkingInterruptible = false;
 		_interruptWalking = true;
@@ -1215,8 +1322,6 @@ void BladeRunnerEngine::handleMouseClickExit(int exitId, int x, int y, bool butt
 }
 
 void BladeRunnerEngine::handleMouseClickRegion(int regionId, int x, int y, bool buttonDown) {
-	debug("clicked on region %d %d %d", regionId, x, y);
-
 	if (_isWalkingInterruptible && regionId != _walkingToRegionId) {
 		_isWalkingInterruptible = false;
 		_interruptWalking = true;
@@ -1250,7 +1355,6 @@ void BladeRunnerEngine::handleMouseClickRegion(int regionId, int x, int y, bool 
 
 void BladeRunnerEngine::handleMouseClick3DObject(int objectId, bool buttonDown, bool isClickable, bool isTarget) {
 	const Common::String &objectName = _scene->objectGetName(objectId);
-	debug("Clicked on object %s", objectName.c_str());
 
 	if (_isWalkingInterruptible && objectId != _walkingToObjectId) {
 		_isWalkingInterruptible = false;
@@ -1305,8 +1409,6 @@ void BladeRunnerEngine::handleMouseClick3DObject(int objectId, bool buttonDown, 
 }
 
 void BladeRunnerEngine::handleMouseClickEmpty(int x, int y, Vector3 &scenePosition, bool buttonDown) {
-	debug("Clicked on nothing %f, %f, %f", scenePosition.x, scenePosition.y, scenePosition.z);
-
 	if (_isWalkingInterruptible) {
 		_isWalkingInterruptible = false;
 		_interruptWalking = true;
@@ -1385,8 +1487,6 @@ void BladeRunnerEngine::handleMouseClickEmpty(int x, int y, Vector3 &scenePositi
 }
 
 void BladeRunnerEngine::handleMouseClickItem(int itemId, bool buttonDown) {
-	debug("Clicked on item %d", itemId);
-
 	if (_isWalkingInterruptible && itemId != _walkingToItemId) {
 		_isWalkingInterruptible = false;
 		_interruptWalking = true;
@@ -1441,8 +1541,6 @@ void BladeRunnerEngine::handleMouseClickItem(int itemId, bool buttonDown) {
 }
 
 void BladeRunnerEngine::handleMouseClickActor(int actorId, bool mainButton, bool buttonDown, Vector3 &scenePosition, int x, int y) {
-	debug("Clicked on actor %d", actorId);
-
 	if (_isWalkingInterruptible && actorId != _walkingToActorId) {
 		_isWalkingInterruptible = false;
 		_interruptWalking = true;
@@ -1461,7 +1559,7 @@ void BladeRunnerEngine::handleMouseClickActor(int actorId, bool mainButton, bool
 				if (!_combat->isActive()) {
 					_kia->openLastOpened();
 				}
-			} else if (!_playerActor->inWalkLoop()) {
+			} else if (!_playerActor->mustReachWalkDestination()) {
 				_combat->change();
 			}
 			return;
@@ -1581,7 +1679,7 @@ bool BladeRunnerEngine::closeArchive(const Common::String &name) {
 		}
 	}
 
-	debug("closeArchive: Archive %s not open.", name.c_str());
+	warning("closeArchive: Archive %s not open.", name.c_str());
 	return false;
 }
 
@@ -1594,15 +1692,28 @@ bool BladeRunnerEngine::isArchiveOpen(const Common::String &name) const {
 	return false;
 }
 
+void BladeRunnerEngine::syncSoundSettings() {
+	Engine::syncSoundSettings();
+
+	_subtitlesEnabled = ConfMan.getBool("subtitles");
+}
+
+bool BladeRunnerEngine::isSubtitlesEnabled() {
+	return _subtitlesEnabled;
+}
+
+void BladeRunnerEngine::setSubtitlesEnabled(bool newVal) {
+	ConfMan.setBool("subtitles", newVal);
+	syncSoundSettings();
+}
+
 Common::SeekableReadStream *BladeRunnerEngine::getResourceStream(const Common::String &name) {
 	for (int i = 0; i != kArchiveCount; ++i) {
 		if (!_archives[i].isOpen()) {
 			continue;
 		}
 
-		if (false) {
-			debug("getResource: Searching archive %s for %s.", _archives[i].getName().c_str(), name.c_str());
-		}
+		// debug("getResource: Searching archive %s for %s.", _archives[i].getName().c_str(), name.c_str());
 
 		Common::SeekableReadStream *stream = _archives[i].createReadStreamForMember(name);
 		if (stream) {
@@ -1622,7 +1733,6 @@ void BladeRunnerEngine::playerLosesControl() {
 	if (++_playerLosesControlCounter == 1) {
 		_mouse->disable();
 	}
-	// debug("Player Lost Control (%d)", _playerLosesControlCounter);
 }
 
 void BladeRunnerEngine::playerGainsControl() {
@@ -1633,29 +1743,39 @@ void BladeRunnerEngine::playerGainsControl() {
 	if (_playerLosesControlCounter > 0)
 		--_playerLosesControlCounter;
 
-	// debug("Player Gained Control (%d)", _playerLosesControlCounter);
-
 	if (_playerLosesControlCounter == 0) {
 		_mouse->enable();
 	}
 }
 
-bool BladeRunnerEngine::saveGame(const Common::String &filename, byte *thumbnail) {
-	warning("BladeRunnerEngine::saveGame not finished");
+void BladeRunnerEngine::playerDied() {
+	playerLosesControl();
 
+	int timeWaitEnd = _time->current() + 5000;
+	while (_time->current() < timeWaitEnd) {
+		gameTick();
+	}
+
+	_actorDialogueQueue->flush(1, false);
+
+	while (_playerLosesControlCounter > 0) {
+		playerGainsControl();
+	}
+
+	_kia->_forceOpen = true;
+	_kia->open(kKIASectionLoad);
+}
+
+bool BladeRunnerEngine::saveGame(Common::WriteStream &stream, const Graphics::Surface &thumbnail) {
 	if (!playerHasControl() || _sceneScript->isInsideScript() || _aiScripts->isInsideScript()) {
 		return false;
 	}
 
-	Common::OutSaveFile *commonSaveFile = getSaveFileManager()->openForSaving(filename, false);
-	if (commonSaveFile->err()) {
-		return false;
-	}
+	Common::MemoryWriteStreamDynamic memoryStream(DisposeAfterUse::YES);
+	SaveFileWriteStream s(memoryStream);
 
-	SaveFileWriteStream s;
-
-	s.padBytes(9600); // TODO: thumbnail
-	s.writeFloat(-1.0f);
+	s.write(thumbnail.getPixels(), SaveFileManager::kThumbnailSize);
+	s.writeFloat(1.0f);
 	_settings->save(s);
 	_scene->save(s);
 	_scene->_exits->save(s);
@@ -1691,49 +1811,43 @@ bool BladeRunnerEngine::saveGame(const Common::String &filename, byte *thumbnail
 		s.writeInt(nextAnimation);
 	}
 	_actors[kActorVoiceOver]->save(s);
-
 	_policeMaze->save(s);
 	_crimesDatabase->save(s);
 
 	s.finalize();
-	assert(0 && "ok");
 
-	commonSaveFile->writeUint32LE(s.size() + 4);
-	commonSaveFile->write(s.getData(), s.size());
+	stream.writeUint32LE(memoryStream.size() + 4);
+	stream.write(memoryStream.getData(), memoryStream.size());
+	stream.flush();
 
-	return !commonSaveFile->err();
+	return true;
 }
 
-void BladeRunnerEngine::loadGame(const Common::String &filename, byte *thumbnail) {
-	warning("BladeRunnerEngine::loadGame not finished");
-
+bool BladeRunnerEngine::loadGame(Common::SeekableReadStream &stream) {
 	if (!playerHasControl() || _sceneScript->isInsideScript() || _aiScripts->isInsideScript()) {
-		return;
+		return false;
 	}
 
-	Common::InSaveFile *commonSaveFile = getSaveFileManager()->openForLoading(filename);
-	if (commonSaveFile->err()) {
-		return;
-	}
-
-	void *buf = malloc(commonSaveFile->size());
-	int dataSize = commonSaveFile->read(buf, commonSaveFile->size());
-
-	SaveFileReadStream s((const byte*)buf, dataSize);
+	SaveFileReadStream s(stream);
 
 	_ambientSounds->removeAllNonLoopingSounds(true);
 	_ambientSounds->removeAllLoopingSounds(1);
 	_music->stop(2);
 	_audioSpeech->stopSpeech();
 	_actorDialogueQueue->flush(true, false);
+	_screenEffects->_entries.clear();
 
 	int size = s.readInt();
 
-	if (size != dataSize) {
-		return;
+	if (size != s.size() - s.pos() + 4) {
+		_gameIsLoading = false;
+		return false;
 	}
 
-	s.skip(9600); // thumbnail
+	_gameIsLoading = true;
+	_settings->setLoadingGame();
+	s.skip(SaveFileManager::kThumbnailSize); // skip the thumbnail
+	s.skip(4);// always float 1.0, but never used
 	_settings->load(s);
 	_scene->load(s);
 	_scene->_exits->load(s);
@@ -1757,7 +1871,6 @@ void BladeRunnerEngine::loadGame(const Common::String &filename, byte *thumbnail
 	_obstacles->load(s);
 	_actorDialogueQueue->load(s);
 	_waypoints->load(s);
-
 	for (uint i = 0; i != _gameInfo->getActorCount(); ++i) {
 		_actors[i]->load(s);
 
@@ -1768,25 +1881,116 @@ void BladeRunnerEngine::loadGame(const Common::String &filename, byte *thumbnail
 		_aiScripts->setAnimationState(i, animationState, animationFrame, animationStateNext, nextAnimation);
 	}
 	_actors[kActorVoiceOver]->load(s);
-
 	_policeMaze->load(s);
 	_crimesDatabase->load(s);
 
+	_gameIsLoading = false;
+
 	_settings->setNewSetAndScene(_settings->getSet(), _settings->getScene());
 	_settings->setChapter(_settings->getChapter());
+
+	return true;
+}
+
+void BladeRunnerEngine::newGame(int difficulty) {
+	_settings->reset();
+	_combat->reset();
+
+	for (uint i = 0; i < _gameInfo->getActorCount(); ++i) {
+		_actors[i]->setup(i);
+	}
+	_actors[kActorVoiceOver]->setup(99);
+
+	for (uint i = 0; i < _gameInfo->getSuspectCount(); ++i) {
+		_suspectsDatabase->get(i)->reset();
+	}
+
+	_gameFlags->clear();
+
+	_gameInfo->getGlobalVarCount();
+
+	for (uint i = 0; i < _gameInfo->getGlobalVarCount(); ++i) {
+		_gameVars[i] = 0;
+	}
+
+	_items->reset();
+	_scores->reset();
+	_kia->reset();
+	_dialogueMenu->clear();
+	_scene->_exits->enable();
+
+	if (difficulty >= 0 && difficulty < 3) {
+		_settings->setDifficulty(difficulty);
+	}
+
+	InitScript initScript(this);
+	initScript.SCRIPT_Initialize_Game();
+	initChapterAndScene();
+
+	_settings->setStartingGame();
+}
+
+void BladeRunnerEngine::autoSaveGame(int textId, bool endgame) {
+	TextResource textAutoSave(this);
+	if (!textAutoSave.open("AUTOSAVE")) {
+		return;
+	}
+
+	SaveStateList saveList = BladeRunner::SaveFileManager::list(getTargetName());
+
+	// Find first available save slot
+	int slot = -1;
+	int maxSlot = -1;
+	for (int i = 0; i < (int)saveList.size(); ++i) {
+		maxSlot = MAX(maxSlot, saveList[i].getSaveSlot());
+		if (saveList[i].getSaveSlot() != i) {
+			slot = i;
+			break;
+		}
+	}
+
+	if (slot == -1) {
+		slot = maxSlot + 1;
+	}
+	if (endgame) {
+		saveGameState(slot, "END_GAME_STATE");
+	} else {
+		saveGameState(slot,  textAutoSave.getText(textId));
+	}
+
 }
 
 void BladeRunnerEngine::ISez(const Common::String &str) {
 	debug("\t%s", str.c_str());
 }
 
-void BladeRunnerEngine::blitToScreen(const Graphics::Surface &src) {
+void BladeRunnerEngine::blitToScreen(const Graphics::Surface &src) const {
 	_system->copyRectToScreen(src.getPixels(), src.pitch, 0, 0, src.w, src.h);
 	_system->updateScreen();
 }
 
+Graphics::Surface BladeRunnerEngine::generateThumbnail() const {
+	Graphics::Surface thumbnail;
+	thumbnail.create(640 / 8, 480 / 8, createRGB555());
+
+	for (int y = 0; y < thumbnail.h; ++y) {
+		for (int x = 0; x < thumbnail.w; ++x) {
+			uint16       *dstPixel = (uint16 *)thumbnail.getBasePtr(x, y);
+			const uint16 *srcPixel = (const uint16 *)_surfaceFront.getBasePtr(x * 8, y * 8);
+
+			*dstPixel = *srcPixel;
+		}
+	}
+
+	return thumbnail;
+}
+
 GUI::Debugger *BladeRunnerEngine::getDebugger() {
 	return _debugger;
+}
+
+Common::String BladeRunnerEngine::getTargetName() const {
+	return _targetName;
 }
 
 void blit(const Graphics::Surface &src, Graphics::Surface &dst) {

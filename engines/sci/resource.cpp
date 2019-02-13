@@ -1626,7 +1626,8 @@ void ResourceManager::readResourcePatchesBase36() {
 
 			// The S/T prefixes often conflict with non-patch files and generate
 			// spurious warnings about invalid patches
-			if (name.hasSuffix(".DLL") || name.hasSuffix(".EXE") || name.hasSuffix(".TXT") || name.hasSuffix(".OLD") || name.hasSuffix(".WIN") || name.hasSuffix(".DOS")) {
+			if (name.hasSuffix(".DLL") || name.hasSuffix(".EXE") || name.hasSuffix(".TXT") || name.hasSuffix(".OLD") || name.hasSuffix(".WIN") || name.hasSuffix(".DOS") ||
+				name.hasSuffix(".HLP") || name.hasSuffix(".DRV")) {
 				continue;
 			}
 
@@ -2102,7 +2103,12 @@ Resource *ResourceManager::updateResource(ResourceId resId, ResourceSource *src,
 		return res;
 	}
 
-	if (validateResource(resId, sourceMapLocation, src->getLocationName(), offset, size, volumeFile->size())) {
+	// Resources from MacResourceForkResourceSource do not have a source size
+	// since the source "volume file" is the empty data fork, and they don't
+	// have an offset either since the MacResManager handles this, so trying to
+	// validate these resources using the normal validation would always fail
+	if (src->getSourceType() == kSourceMacResourceFork ||
+		validateResource(resId, sourceMapLocation, src->getLocationName(), offset, size, volumeFile->size())) {
 		if (res == nullptr) {
 			res = new Resource(this, resId);
 			_resMap.setVal(resId, res);

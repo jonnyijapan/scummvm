@@ -34,10 +34,12 @@
 #include "bladerunner/mouse.h"
 #include "bladerunner/music.h"
 #include "bladerunner/scene.h"
-#include "bladerunner/shape.h"
 #include "bladerunner/script/vk_script.h"
+#include "bladerunner/shape.h"
 #include "bladerunner/slice_renderer.h"
+#include "bladerunner/subtitles.h"
 #include "bladerunner/text_resource.h"
+#include "bladerunner/time.h"
 #include "bladerunner/ui/ui_image_picker.h"
 #include "bladerunner/vqa_player.h"
 
@@ -87,8 +89,8 @@ void VK::open(int actorId, int calibrationRatio) {
 		_shapes[i]->open("VK.SHP", i);
 	}
 
-	_vqaPlayerMain = new VQAPlayer(_vm, &_vm->_surfaceBack);
-	if (!_vqaPlayerMain->open("VK.VQA")) {
+	_vqaPlayerMain = new VQAPlayer(_vm, &_vm->_surfaceBack, "VK.VQA");
+	if (!_vqaPlayerMain->open()) {
 		return;
 	}
 
@@ -114,8 +116,8 @@ void VK::open(int actorId, int calibrationRatio) {
 	}
 
 	_surfaceEye.create(172, 116, createRGB555());
-	_vqaPlayerEye = new VQAPlayer(_vm, &_surfaceEye);
-	if (!_vqaPlayerEye->open(eyeVqa)) {
+	_vqaPlayerEye = new VQAPlayer(_vm, &_surfaceEye, eyeVqa);
+	if (!_vqaPlayerEye->open()) {
 		return;
 	}
 	if (!_vqaPlayerEye->setLoop(0, -1, kLoopSetModeEnqueue, nullptr, nullptr)) {
@@ -126,7 +128,7 @@ void VK::open(int actorId, int calibrationRatio) {
 
 	_script = new VKScript(_vm);
 
-	//TODO: time->lock()
+	_vm->_time->pause();
 
 	init();
 }
@@ -182,7 +184,7 @@ void VK::close() {
 	_vm->_music->setVolume(_volumeMusic);
 	_vm->_ambientSounds->setVolume(_volumeAmbient);
 
-	// TODO: time->unlock();
+	_vm->_time->resume();
 	_vm->_scene->resume();
 }
 
@@ -195,10 +197,12 @@ void VK::tick() {
 
 	draw();
 
+	_vm->_subtitles->tick(_vm->_surfaceFront);
+
 	_vm->blitToScreen(_vm->_surfaceFront);
 	_vm->_system->delayMillis(10);
 
-	if (_isClosing && (int)_vm->getTotalPlayTime() >= _timeClose && !_script->isInsideScript()) {
+	if (_isClosing && _vm->_time->current() >= _timeClose && !_script->isInsideScript()) {
 		close();
 		_vm->_mouse->enable();
 		reset();
@@ -239,24 +243,24 @@ void VK::playSpeechLine(int actorId, int sentenceId, float duration) {
 	actor->speechPlay(sentenceId, true);
 
 	while (_vm->_gameIsRunning) {
-		// ActorSpeaking = 1;
-		_vm->_speechSkipped = false;
+		_vm->_actorIsSpeaking = true;
+		_vm->_actorSpeakStopIsRequested = false;
 		_vm->gameTick();
-		// ActorSpeaking = 0;
-		if (_vm->_speechSkipped || !actor->isSpeeching()) {
+		_vm->_actorIsSpeaking = false;
+		if (_vm->_actorSpeakStopIsRequested || !actor->isSpeeching()) {
 			actor->speechStop();
 			break;
 		}
 	}
 
-	if (duration > 0.0f && !_vm->_speechSkipped) {
-		int timeEnd = duration * 1000.0f + _vm->getTotalPlayTime();
-		while (timeEnd > (int)_vm->getTotalPlayTime() && _vm->_gameIsRunning) {
+	if (duration > 0.0f && !_vm->_actorSpeakStopIsRequested) {
+		int timeEnd = duration * 1000.0f + _vm->_time->current();
+		while ((timeEnd > _vm->_time->current()) && _vm->_gameIsRunning) {
 			_vm->gameTick();
 		}
 	}
 
-	_vm->_speechSkipped = false;
+	_vm->_actorSpeakStopIsRequested = false;
 
 	_vm->_mouse->enable();
 }
@@ -265,7 +269,7 @@ void VK::subjectReacts(int intensity, int humanResponse, int replicantResponse, 
 	humanResponse     = CLIP(humanResponse, -20, 20);
 	replicantResponse = CLIP(replicantResponse, -20, 20);
 
-	int timeNow = _vm->getTotalPlayTime();
+	int timeNow = _vm->_time->current();
 
 	if (intensity > 0) {
 		_needleValueTarget = 78 * intensity / 100;
@@ -468,7 +472,7 @@ void VK::init() {
 }
 
 void VK::draw() {
-	if (!_isOpen || !_vm->_gameIsRunning) {
+	if (!_isOpen || !_vm->_windowIsActive) {
 		return;
 	}
 
@@ -509,7 +513,7 @@ void VK::draw() {
 
 	Graphics::Surface &surface = _vm->_surfaceFront;
 
-	int timeNow = _vm->getTotalPlayTime();
+	int timeNow = _vm->_time->current();
 
 	if (_isAdjusting && !_testStarted && !_vm->isMouseButtonDown()) {
 		_isAdjusting = false;
@@ -670,7 +674,7 @@ void VK::draw() {
 
 void VK::drawNeedle(Graphics::Surface &surface) {
 	int x = _needleValue + 165;
-	if ((int)_vm->getTotalPlayTime() >= _timeNextNeedleOscillate && x > 165) {
+	if ((_vm->_time->current() >= _timeNextNeedleOscillate) && (x > 165)) {
 		x = CLIP(x + (int)_vm->_rnd.getRandomNumberRng(0, 4) - 2, 165, 245);
 	}
 
@@ -851,7 +855,7 @@ void VK::stopAdjustement() {
 void VK::animateAdjustment(int target) {
 	_adjustmentTarget = MAX(target - 4, 154);
 	_adjustmentDelta = (_adjustmentTarget - _adjustment) / 5;
-	_timeNextAdjustementStep = _vm->getTotalPlayTime() + 50;
+	_timeNextAdjustementStep = _vm->_time->current() + 50;
 }
 
 void VK::setAdjustment(int x) {
@@ -891,7 +895,7 @@ void VK::askQuestion(int intensity) {
 
 	for (int i = 0; i < (int)_questions[intensity].size(); ++i) {
 		if (_questions[intensity][i].isPresent && !_questions[intensity][i].wasAsked) {
-			// TODO: related questions are not used in game
+			// cut content? related questions are not used in game
 			// int relatedQuestion = -1;
 			// if (_questions[intensity][i].relatedSentenceId >= 0) {
 			// 	relatedQuestion = vk::findQuestionById(this, questions, relatedQuestionId);
@@ -920,7 +924,7 @@ void VK::askQuestion(int intensity) {
 	} else if (!_isClosing && !_script->isInsideScript()) {
 		_isClosing = true;
 		_vm->_mouse->disable();
-		_timeClose = _vm->getTotalPlayTime() + 3000;
+		_timeClose = _vm->_time->current() + 3000;
 	}
 }
 

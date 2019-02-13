@@ -23,12 +23,21 @@
 #ifndef PINK_DETECTION_TABLES_H
 #define PINK_DETECTION_TABLES_H
 
-#include "gui/EventRecorder.h"
-
 namespace Pink {
 
 static const ADGameDescription gameDescriptions[] = {
-	// Dutch, Version 1.0
+	// Danish, Version 1.0
+	{
+		"peril",
+		0,
+		AD_ENTRY1s("PPTP.ORB", "eae050c09d7f6bfbb3166d2c39957e31", 608976918),
+		Common::DA_DAN,
+		Common::kPlatformWindows,
+		ADGF_UNSTABLE | ADGF_DROPPLATFORM,
+		GUIO1(GUIO_NONE)
+	},
+
+	// Dutch
 	{
 		"peril",
 		0,

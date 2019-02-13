@@ -70,12 +70,9 @@ void Item::getWidthHeight(int *width, int *height) const {
 	*height = _height;
 }
 
-bool Item::isTarget() const {
-	return _isTarget;
-}
-
-bool Item::isPoliceMazeEnemy() const {
-	return _isPoliceMazeEnemy;
+void Item::setFacing(int facing) {
+	_facing = facing;
+	_angle = _facing * (M_PI / 512.0f);
 }
 
 bool Item::tick(Common::Rect *screenRect, bool special) {
@@ -177,7 +174,7 @@ bool Item::isUnderMouse(int mouseX, int mouseY) const {
 void Item::save(SaveFileWriteStream &f) {
 	f.writeInt(_setId);
 	f.writeInt(_itemId);
-	f.writeBoundingBox(_boundingBox);
+	f.writeBoundingBox(_boundingBox, false);
 	f.writeRect(_screenRectangle);
 	f.writeInt(_animationId);
 	f.writeVector3(_position);
@@ -199,7 +196,7 @@ void Item::save(SaveFileWriteStream &f) {
 void Item::load(SaveFileReadStream &f) {
 	_setId = f.readInt();
 	_itemId = f.readInt();
-	_boundingBox = f.readBoundingBox();
+	_boundingBox = f.readBoundingBox(false);
 	_screenRectangle = f.readRect();
 	_animationId = f.readInt();
 	_position = f.readVector3();

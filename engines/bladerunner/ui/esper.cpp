@@ -35,8 +35,10 @@
 #include "bladerunner/shape.h"
 #include "bladerunner/script/esper_script.h"
 #include "bladerunner/text_resource.h"
+#include "bladerunner/time.h"
 #include "bladerunner/ui/ui_image_picker.h"
 #include "bladerunner/vqa_player.h"
+#include "bladerunner/subtitles.h"
 
 #include "common/rect.h"
 #include "common/str.h"
@@ -82,7 +84,8 @@ void ESPER::open(Graphics::Surface *surface) {
 		_vm->_mouse->enable();
 	}
 
-	//TODO: time->lock()
+	_vm->_time->pause();
+
 	_ambientVolume = _vm->_ambientSounds->getVolume();
 	_vm->_ambientSounds->setVolume(_ambientVolume / 2);
 
@@ -107,8 +110,8 @@ void ESPER::open(Graphics::Surface *surface) {
 
 	_shapesPhotos.resize(10);
 
-	_vqaPlayerMain = new VQAPlayer(_vm, &_vm->_surfaceBack);
-	if (!_vqaPlayerMain->open("ESPER.VQA")) {
+	_vqaPlayerMain = new VQAPlayer(_vm, &_vm->_surfaceBack, "ESPER.VQA");
+	if (!_vqaPlayerMain->open()) {
 		return;
 	}
 	_vqaPlayerMain->setLoop(2, -1, kLoopSetModeJustStart, nullptr, nullptr);
@@ -151,7 +154,8 @@ void ESPER::close() {
 
 	_vm->closeArchive("MODE.MIX");
 
-	//TODO: time->unlock()
+	_vm->_time->resume();
+
 	_vm->_ambientSounds->setVolume(_ambientVolume);
 	_vm->_scene->resume();
 	reset();
@@ -204,7 +208,7 @@ void ESPER::handleMouseDown(int x, int y, bool mainButton) {
 }
 
 void ESPER::tick() {
-	if (!_vm->_gameIsRunning) {
+	if (!_vm->_windowIsActive) {
 		return;
 	}
 
@@ -227,7 +231,7 @@ void ESPER::tick() {
 	drawMouse(_vm->_surfaceFront);
 
 	tickSound();
-
+	_vm->_subtitles->tick(_vm->_surfaceFront);
 	_vm->blitToScreen(_vm->_surfaceFront);
 
 	// TODO: implement 60hz lock for smoother experience
@@ -242,7 +246,7 @@ void ESPER::tick() {
 }
 
 void ESPER::resume() {
-	//TODO
+	// TODO
 }
 
 void ESPER::addPhoto(const char *name, int photoId, int shapeId) {
@@ -520,21 +524,18 @@ void ESPER::activate(bool withOpening) {
 void ESPER::setStateMain(EsperMainStates state) {
 	if (_isOpen) {
 		_stateMain = state;
-		debug("ESPER main state: %d", _stateMain);
-
 	}
 }
 
 void ESPER::setStatePhoto(EsperPhotoStates state) {
 	_statePhoto = state;
-	debug("ESPER photo state: %d", _statePhoto);
 }
 
 void ESPER::wait(int timeout) {
 	if (!_isWaiting) {
 		_isWaiting = true;
-		uint timeEnd = timeout + _vm->getTotalPlayTime();
-		while (_vm->getTotalPlayTime() < timeEnd) {
+		int timeEnd = timeout + _vm->_time->current();
+		while (_vm->_gameIsRunning && (_vm->_time->current() < timeEnd)) {
 			_vm->gameTick();
 		}
 		_isWaiting = false;
@@ -652,7 +653,7 @@ void ESPER::draw(Graphics::Surface &surface) {
 
 void ESPER::drawPhotoOpening(Graphics::Surface &surface) {
 	bool needMoreZooming = true;
-	int timeNow = _vm->getTotalPlayTime();
+	int timeNow = _vm->_time->current();
 	if (timeNow >= _timePhotoOpeningNext) {
 		_photoOpeningWidth  = MIN(_photoOpeningWidth  + 8, _screen.right  - 1);
 		_photoOpeningHeight = MIN(_photoOpeningHeight + 7, _screen.bottom - 1);
@@ -682,7 +683,7 @@ void ESPER::drawPhotoOpening(Graphics::Surface &surface) {
 bool ESPER::drawSelectionZooming(Graphics::Surface &surface) {
 	bool zooming = false;
 	bool needMoreZooming = true;
-	int timeNow = _vm->getTotalPlayTime();
+	int timeNow = _vm->_time->current();
 	if (timeNow > _timeSelectionZoomNext) {
 		zooming = true;
 		_selection.left   += _selectionDelta.left;
@@ -713,7 +714,7 @@ bool ESPER::drawSelectionZooming(Graphics::Surface &surface) {
 
 bool ESPER::drawSelectionBlinking(Graphics::Surface &surface) {
 	bool needMoreBlinking = true;
-	int timeNow = _vm->getTotalPlayTime();
+	int timeNow = _vm->_time->current();
 	if (timeNow > _timeSelectionBlinkingNext) {
 		_timeSelectionBlinkingNext = timeNow + 100;
 		_selectionBlinkingStyle ^= 1;
@@ -731,7 +732,7 @@ bool ESPER::drawSelectionBlinking(Graphics::Surface &surface) {
 }
 
 void ESPER::drawPhotoZooming(Graphics::Surface &surface) {
-	int timeNow = _vm->getTotalPlayTime();
+	int timeNow = _vm->_time->current();
 	if ((timeNow > _timeZoomNext) && (_zoomStep < _zoomSteps)) {
 		_flash = true;
 
@@ -799,7 +800,7 @@ void ESPER::drawPhotoZooming(Graphics::Surface &surface) {
 }
 
 void ESPER::drawPhotoSharpening(Graphics::Surface &surface) {
-	int timeNow = _vm->getTotalPlayTime();
+	int timeNow = _vm->_time->current();
 	bool needMoreSharpening = true;
 	if (timeNow >= _timePhotoOpeningNext) {
 		_photoOpeningWidth  = MIN(_photoOpeningWidth  + 8, _screen.right  - 1);
@@ -840,7 +841,7 @@ void ESPER::drawPhotoSharpening(Graphics::Surface &surface) {
 }
 
 void ESPER::drawPhotoZoomOut(Graphics::Surface &surface) {
-	int timeNow = _vm->getTotalPlayTime();
+	int timeNow = _vm->_time->current();
 	if (timeNow >= _timeZoomOutNext) {
 		_timeZoomOutNext = timeNow + 300;
 
@@ -866,8 +867,8 @@ void ESPER::drawPhotoZoomOut(Graphics::Surface &surface) {
 
 void ESPER::drawVideoZooming(Graphics::Surface &surface) {
 	if (_vqaPlayerPhoto == nullptr) {
-		_vqaPlayerPhoto = new VQAPlayer(_vm, &_surfaceViewport);
-		if (!_vqaPlayerPhoto->open(Common::String(_regions[_regionSelected].name) + ".VQA")) {
+		_vqaPlayerPhoto = new VQAPlayer(_vm, &_surfaceViewport, Common::String(_regions[_regionSelected].name) + ".VQA");
+		if (!_vqaPlayerPhoto->open()) {
 			setStatePhoto(kEsperPhotoStateShow);
 			_vm->_mouse->enable();
 
@@ -882,7 +883,7 @@ void ESPER::drawVideoZooming(Graphics::Surface &surface) {
 
 	bool flash = false;
 	bool advanceFrame = false;
-	int timeNow = _vm->getTotalPlayTime();
+	int timeNow = _vm->_time->current();
 	if (timeNow > _timeZoomNext) {
 		_timeZoomNext = timeNow + 300;
 		playSound(419, 25);
@@ -907,7 +908,7 @@ void ESPER::drawVideoZooming(Graphics::Surface &surface) {
 void ESPER::drawVideoZoomOut(Graphics::Surface &surface) {
 	bool flash = false;
 	bool advanceFrame = false;
-	int timeNow = _vm->getTotalPlayTime();
+	int timeNow = _vm->_time->current();
 	if (timeNow > _timeZoomNext && _vqaLastFrame > 0) {
 		_timeZoomNext = timeNow + 300;
 		playSound(419, 25);
@@ -1379,7 +1380,7 @@ void ESPER::tickSound() {
 }
 
 void ESPER::tickScroll() {
-	int timeNow = _vm->getTotalPlayTime();
+	int timeNow = _vm->_time->current();
 	if (timeNow <= _timeScrollNext) {
 		return;
 	}

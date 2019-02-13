@@ -35,9 +35,9 @@
 
 #include "graphics/surface.h"
 
-//TODO: remove these when game is playable
+//TODO: change this to debugflag
 #define BLADERUNNER_DEBUG_CONSOLE 0
-#define BLADERUNNER_DEBUG_GAME 0
+#define BLADERUNNER_ORIGINAL_SETTINGS 0
 
 namespace Common {
 struct Event;
@@ -51,11 +51,16 @@ struct ADGameDescription;
 
 namespace BladeRunner {
 
+enum DebugLevels {
+	kDebugScript = 1 << 0
+};
+
 class Actor;
 class ActorDialogueQueue;
 class ScreenEffects;
 class AIScripts;
 class AmbientSounds;
+class AudioCache;
 class AudioMixer;
 class AudioPlayer;
 class AudioSpeech;
@@ -88,6 +93,7 @@ class Shape;
 class SliceAnimations;
 class SliceRenderer;
 class Spinner;
+class Subtitles;
 class SuspectsDatabase;
 class TextResource;
 class Time;
@@ -100,11 +106,7 @@ class ZBuffer;
 
 class BladeRunnerEngine : public Engine {
 public:
-#if BLADERUNNER_DEBUG_GAME
-	static const int kArchiveCount = 100;
-#else
-	static const int kArchiveCount = 10;
-#endif
+	static const int kArchiveCount = 11; // +1 to original value (10) to accommodate for SUBTITLES.MIX resource
 	static const int kActorCount = 100;
 	static const int kActorVoiceOver = kActorCount - 1;
 
@@ -117,6 +119,7 @@ public:
 	ScreenEffects      *_screenEffects;
 	AIScripts          *_aiScripts;
 	AmbientSounds      *_ambientSounds;
+	AudioCache         *_audioCache;
 	AudioMixer         *_audioMixer;
 	AudioPlayer        *_audioPlayer;
 	AudioSpeech        *_audioSpeech;
@@ -134,6 +137,7 @@ public:
 	KIA                *_kia;
 	Lights             *_lights;
 	Font               *_mainFont;
+	Subtitles          *_subtitles;
 	Mouse              *_mouse;
 	Music              *_music;
 	Obstacles          *_obstacles;
@@ -148,7 +152,7 @@ public:
 	SliceRenderer      *_sliceRenderer;
 	Spinner            *_spinner;
 	SuspectsDatabase   *_suspectsDatabase;
-	Time               *_gameTime;
+	Time               *_time;
 	View               *_view;
 	VK                 *_vk;
 	Waypoints          *_waypoints;
@@ -169,7 +173,6 @@ public:
 
 	Graphics::Surface  _surfaceFront;
 	Graphics::Surface  _surfaceBack;
-	Graphics::Surface  _surface4;
 
 	ZBuffer           *_zbuffer;
 
@@ -184,13 +187,17 @@ public:
 	bool _interruptWalking;
 	bool _playerActorIdle;
 	bool _playerDead;
-	bool _speechSkipped;
+	bool _actorIsSpeaking;
+	bool _actorSpeakStopIsRequested;
 	bool _gameOver;
 	int  _gameAutoSave;
 	bool _gameIsLoading;
 	bool _sceneIsLoading;
 	bool _vqaIsPlaying;
 	bool _vqaStopIsRequested;
+	bool _subtitlesEnabled; // tracks the state of whether subtitles are enabled or disabled from ScummVM GUI option or KIA checkbox (the states are synched)
+	bool _sitcomMode;
+	bool _shortyMode;
 
 	int _walkSoundId;
 	int _walkSoundVolume;
@@ -224,16 +231,20 @@ public:
 	BladeRunnerEngine(OSystem *syst, const ADGameDescription *desc);
 	~BladeRunnerEngine();
 
-	bool hasFeature(EngineFeature f) const;
+	bool hasFeature(EngineFeature f) const override;
+	bool canLoadGameStateCurrently() override;
+	Common::Error loadGameState(int slot) override;
+	bool canSaveGameStateCurrently() override;
+	Common::Error saveGameState(int slot, const Common::String &desc) override;
+	void pauseEngineIntern(bool pause) override;
 
-	Common::Error run();
+	Common::Error run() override;
 
 	bool startup(bool hasSavegames = false);
 	void initChapterAndScene();
 	void shutdown();
 
 	bool loadSplash();
-	bool init2();
 
 	Common::Point getMousePos() const;
 	bool isMouseButtonDown() const;
@@ -265,22 +276,29 @@ public:
 	bool closeArchive(const Common::String &name);
 	bool isArchiveOpen(const Common::String &name) const;
 
+	void syncSoundSettings();
+	bool isSubtitlesEnabled();
+	void setSubtitlesEnabled(bool newVal);
+
 	Common::SeekableReadStream *getResourceStream(const Common::String &name);
 
 	bool playerHasControl();
 	void playerLosesControl();
 	void playerGainsControl();
+	void playerDied();
 
-	bool saveGame(const Common::String &filename, byte *thumbnail);
-	void loadGame(const Common::String &filename, byte *thumbnail);
-	void newGame();
-	void autoSaveGame();
+	bool saveGame(Common::WriteStream &stream, const Graphics::Surface &thumbnail);
+	bool loadGame(Common::SeekableReadStream &stream);
+	void newGame(int difficulty);
+	void autoSaveGame(int textId, bool endgame);
 
 	void ISez(const Common::String &str);
 
-	void blitToScreen(const Graphics::Surface &src);
+	void blitToScreen(const Graphics::Surface &src) const;
+	Graphics::Surface generateThumbnail() const;
 
 	GUI::Debugger *getDebugger();
+	Common::String getTargetName() const;
 };
 
 static inline const Graphics::PixelFormat createRGB555() {

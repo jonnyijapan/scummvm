@@ -23,6 +23,7 @@
 #include "bladerunner/vqa_player.h"
 
 #include "bladerunner/bladerunner.h"
+#include "bladerunner/time.h"
 
 #include "audio/decoders/raw.h"
 
@@ -30,8 +31,8 @@
 
 namespace BladeRunner {
 
-bool VQAPlayer::open(const Common::String &name) {
-	_s = _vm->getResourceStream(name);
+bool VQAPlayer::open() {
+	_s = _vm->getResourceStream(_name);
 	if (!_s) {
 		return false;
 	}
@@ -71,8 +72,8 @@ void VQAPlayer::close() {
 	_s = nullptr;
 }
 
-int VQAPlayer::update(bool forceDraw, bool advanceFrame, Graphics::Surface *customSurface) {
-	uint32 now = 60 * _vm->_system->getMillis();
+int VQAPlayer::update(bool forceDraw, bool advanceFrame, bool useTime, Graphics::Surface *customSurface) {
+	uint32 now = 60 * _vm->_time->currentSystem();
 	int result = -1;
 
 	if (_frameNext < 0) {
@@ -106,7 +107,7 @@ int VQAPlayer::update(bool forceDraw, bool advanceFrame, Graphics::Surface *cust
 		result = -1;
 	} else if (_frameNext > _frameEnd) {
 		result = -3;
-	} else if (now < _frameNextTime) {
+	} else if (useTime && (now < _frameNextTime)) {
 		result = -1;
 	} else if (advanceFrame) {
 		_frame = _frameNext;
@@ -131,11 +132,13 @@ int VQAPlayer::update(bool forceDraw, bool advanceFrame, Graphics::Surface *cust
 				queueAudioFrame(_decoder.decodeAudioFrame());
 			}
 		}
-		if (_frameNextTime == 0) {
-			_frameNextTime = now + 60000 / 15;
-		}
-		else {
-			_frameNextTime += 60000 / 15;
+		if (useTime) {
+			if (_frameNextTime == 0) {
+				_frameNextTime = now + 60000 / 15;
+			}
+			else {
+				_frameNextTime += 60000 / 15;
+			}
 		}
 		_frameNext++;
 		result = _frame;
@@ -165,9 +168,6 @@ void VQAPlayer::updateLights(Lights *lights) {
 }
 
 bool VQAPlayer::setLoop(int loop, int repeatsCount, int loopSetMode, void (*callback)(void *, int, int), void *callbackData) {
-#if BLADERUNNER_DEBUG_CONSOLE
-	debug("VQAPlayer::setBeginAndEndFrameFromLoop(%i, %i, %i), streamLoaded = %i", loop, repeatsCount, loopSetMode, _s != nullptr);
-#endif
 	if (_s == nullptr) {
 		_loopInitial = loop;
 		_repeatsCountInitial = repeatsCount;
@@ -186,10 +186,6 @@ bool VQAPlayer::setLoop(int loop, int repeatsCount, int loopSetMode, void (*call
 }
 
 bool VQAPlayer::setBeginAndEndFrame(int begin, int end, int repeatsCount, int loopSetMode, void (*callback)(void *, int, int), void *callbackData) {
-#if BLADERUNNER_DEBUG_CONSOLE
-	debug("VQAPlayer::setBeginAndEndFrame(%i, %i, %i, %i), streamLoaded = %i", begin, end, repeatsCount, loopSetMode, _s != nullptr);
-#endif
-
 	if (repeatsCount < 0) {
 		repeatsCount = -1;
 	}
@@ -221,7 +217,7 @@ bool VQAPlayer::setBeginAndEndFrame(int begin, int end, int repeatsCount, int lo
 
 bool VQAPlayer::seekToFrame(int frame) {
 	_frameNext = frame;
-	_frameNextTime = 60 * _vm->_system->getMillis();
+	_frameNextTime = 60 * _vm->_time->currentSystem();
 	return true;
 }
 

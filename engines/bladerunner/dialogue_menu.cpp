@@ -24,6 +24,7 @@
 
 #include "bladerunner/bladerunner.h"
 #include "bladerunner/font.h"
+#include "bladerunner/game_constants.h"
 #include "bladerunner/mouse.h"
 #include "bladerunner/savefile.h"
 #include "bladerunner/settings.h"
@@ -75,7 +76,6 @@ bool DialogueMenu::show() {
 }
 
 bool DialogueMenu::showAt(int x, int y) {
-	debug("DialogueMenu::showAt %d %d %d", _isVisible, x, y);
 	if (_isVisible) {
 		return false;
 	}
@@ -134,16 +134,43 @@ bool DialogueMenu::addToList(int answer, bool done, int priorityPolite, int prio
 }
 
 bool DialogueMenu::addToListNeverRepeatOnceSelected(int answer, int priorityPolite, int priorityNormal, int prioritySurly) {
+	int foundIndex = -1;
 	for (int i = 0; i != _neverRepeatListSize; ++i) {
-		if (answer == _neverRepeatValues[i] && _neverRepeatWasSelected[i]) {
-			return true;
+		if (answer == _neverRepeatValues[i]) {
+			foundIndex = i;
+			break;
 		}
 	}
 
-	_neverRepeatValues[_neverRepeatListSize] = answer;
-	_neverRepeatWasSelected[_neverRepeatListSize] = false;
-	++_neverRepeatListSize;
+	if (foundIndex > 0 && _neverRepeatWasSelected[foundIndex]) {
+		return true;
+	}
+
+	if (foundIndex == -1) {
+		_neverRepeatValues[_neverRepeatListSize] = answer;
+		_neverRepeatWasSelected[_neverRepeatListSize] = false;
+		++_neverRepeatListSize;
+
+		assert(_neverRepeatListSize <= 100);
+	}
+
 	return addToList(answer, false, priorityPolite, priorityNormal, prioritySurly);
+}
+
+bool DialogueMenu::removeFromList(int answer) {
+	int index = getAnswerIndex(answer);
+	if (index != -1) {
+		return false;
+	}
+	if (index < _listSize - 1) {
+		for (int i = index; i < _listSize; ++i) {
+			_items[index] = _items[index + 1];
+		}
+	}
+	--_listSize;
+
+	calculatePosition();
+	return true;
 }
 
 int DialogueMenu::queryInput() {
@@ -183,7 +210,7 @@ int DialogueMenu::queryInput() {
 				}
 
 				_vm->gameTick();
-			} while (_waitingForInput);
+			} while (_vm->_gameIsRunning && _waitingForInput);
 		} else if (agenda == kPlayerAgendaErratic) {
 			int tries = 0;
 			bool searching = true;
@@ -225,7 +252,7 @@ int DialogueMenu::queryInput() {
 		}
 	}
 
-	debug("DM Query Input: %d %s", answer, _items[_selectedItemIndex].text.c_str());
+	// debug("DM Query Input: %d %s", answer, _items[_selectedItemIndex].text.c_str());
 
 	return answer;
 }
@@ -354,7 +381,6 @@ void DialogueMenu::calculatePosition(int unusedX, int unusedY) {
 	_screenY = CLIP(_screenY, 0, 480 - h);
 
 	_fadeInItemIndex = 0;
-	debug("calculatePosition: %d %d %d %d %d", _screenX, _screenY, _centerX, _centerY, _maxItemWidth);
 }
 
 void DialogueMenu::mouseUp() {
@@ -395,6 +421,40 @@ void DialogueMenu::load(SaveFileReadStream &f) {
 	_selectedItemIndex = f.readInt();
 	_listSize = f.readInt();
 
+#if 0
+	/* fix for duplicated non-repeated entries in the save game */
+	f.readInt();
+	_neverRepeatListSize = 0;
+	int answer[100];
+	bool selected[100];
+	for (int i = 0; i < 100; ++i) {
+		_neverRepeatValues[i] = -1;
+		answer[i] = f.readInt();
+	}
+	for (int i = 0; i < 100; ++i) {
+		_neverRepeatWasSelected[i] = false;
+		selected[i] = f.readBool();
+	}
+	for (int i = 0; i < 100; ++i) {
+		int found = false;
+		bool value = false;
+
+		for (int j = 0; j < 100; ++j) {
+			if (_neverRepeatValues[j] == answer[i]) {
+				found = true;
+			}
+			if (answer[j] == answer[i]) {
+				value |= selected[j];
+			}
+		}
+
+		if (!found) {
+			_neverRepeatValues[_neverRepeatListSize] = answer[i];
+			_neverRepeatWasSelected[_neverRepeatListSize] = value;
+			++_neverRepeatListSize;
+		}
+	}
+#else
 	_neverRepeatListSize = f.readInt();
 	for (int i = 0; i < 100; ++i) {
 		_neverRepeatValues[i] = f.readInt();
@@ -402,6 +462,8 @@ void DialogueMenu::load(SaveFileReadStream &f) {
 	for (int i = 0; i < 100; ++i) {
 		_neverRepeatWasSelected[i] = f.readBool();
 	}
+#endif
+
 	for (int i = 0; i < 10; ++i) {
 		_items[i].text = f.readStringSz(50);
 		_items[i].answerValue = f.readInt();

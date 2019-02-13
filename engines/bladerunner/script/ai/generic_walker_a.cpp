@@ -58,7 +58,7 @@ bool AIScriptGenericWalkerA::Update() {
 				movingUpdate();
 			}
 			break;
-		case 200:
+		case 200: // Automatic gun at Bullet Bob
 			Actor_Face_Actor(kActorGenwalkerA, kActorMcCoy, true);
 			break;
 	}
@@ -343,7 +343,7 @@ void AIScriptGenericWalkerA::movingUpdate() {
 }
 
 bool AIScriptGenericWalkerA::prepareWalker() {
-	if (Game_Flag_Query(kFlagGenericWalkerWaiting) || Global_Variable_Query(35) < 0 || !preparePath()) {
+	if (Game_Flag_Query(kFlagGenericWalkerWaiting) || Global_Variable_Query(kVariableGenericWalkerConfig) < 0 || !preparePath()) {
 		return false;
 	}
 
